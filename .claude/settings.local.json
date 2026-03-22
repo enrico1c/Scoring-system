@@ -4,7 +4,9 @@
       "Bash(pip install:*)",
       "Bash(curl -sv \"http://localhost:5000/api/validate?ticker=AAPL\")",
       "Bash(pkill -f \"python app.py\")",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(python -c \":*)",
+      "Bash(git push:*)"
     ]
   }
 }
