@@ -9,12 +9,15 @@ import time
 from flask import Flask, jsonify, request, send_file, abort
 from flask_cors import CORS
 
-from scoring.data_fetcher import extract_raw_metrics
+from scoring.data_fetcher import extract_raw_metrics, prewarm
 from scoring.scorer       import compute_full_score
 from scoring.analyzer     import generate_full_analysis
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 CORS(app)
+
+# Warm up Yahoo Finance session in the background so the first request is fast
+prewarm()
 
 _TICKER_RE = re.compile(r"^[A-Z0-9\.\-\^]{1,12}$")
 
