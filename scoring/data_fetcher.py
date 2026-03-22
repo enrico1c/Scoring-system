@@ -41,30 +41,47 @@ _CRUMB_TTL = 1800  # re-obtain crumb after 30 min
 
 
 def _build_session_and_crumb() -> tuple[requests.Session, str]:
-    """Build a fresh session with cookies + crumb. Never holds _sess_lock."""
+    """
+    Build a fresh session with cookies + crumb.
+    Mirrors yfinance's two-strategy approach:
+      1. fc.yahoo.com  — lightweight A3 cookie, no consent page
+      2. finance.yahoo.com — fallback, may serve GDPR consent redirect
+    Never holds _sess_lock.
+    """
     s = requests.Session()
     s.headers.update(_BASE_HEADERS)
-    # Seed cookies — try each URL, move on if one hangs
-    for seed_url in [
-        "https://finance.yahoo.com",
-        "https://fc.yahoo.com",
-        "https://www.yahoo.com",
-    ]:
-        try:
-            s.get(seed_url, timeout=(5, 8), allow_redirects=True)
-            break
-        except Exception:
-            continue
-    # Obtain crumb
+
+    # Strategy 1: fc.yahoo.com (preferred — no consent pages)
+    cookie_ok = False
+    try:
+        r = s.get("https://fc.yahoo.com", timeout=(5, 10), allow_redirects=True)
+        if r.status_code == 200:
+            cookie_ok = True
+    except Exception:
+        pass
+
+    # Strategy 2: finance.yahoo.com fallback
+    if not cookie_ok:
+        for seed_url in ["https://finance.yahoo.com", "https://www.yahoo.com"]:
+            try:
+                s.get(seed_url, timeout=(5, 10), allow_redirects=True)
+                cookie_ok = True
+                break
+            except Exception:
+                continue
+
+    # Try both query bases for the crumb
     crumb = ""
     for base in [YAHOO_Q2, YAHOO_Q1]:
         try:
-            r = s.get(f"{base}/v1/test/getcrumb", timeout=(5, 8))
-            if r.status_code == 200 and r.text.strip() not in ("", "null"):
-                crumb = r.text.strip()
+            r = s.get(f"{base}/v1/test/getcrumb", timeout=(5, 10))
+            text = r.text.strip()
+            if r.status_code == 200 and text not in ("", "null"):
+                crumb = text
                 break
         except Exception:
             continue
+
     return s, crumb
 
 
@@ -141,8 +158,8 @@ SUMMARY_MODULES = [
 ]
 
 
-def _fetch_quote_v7(ticker: str, session: requests.Session) -> dict:
-    """v7/finance/quote — works without crumb, returns key market metrics."""
+def _fetch_quote_v7(ticker: str, session: requests.Session) -> tuple[dict, str]:
+    """v7/finance/quote — returns (data_dict, error_str)."""
     fields = (
         "longName,shortName,regularMarketPrice,regularMarketChangePercent,"
         "marketCap,trailingPE,forwardPE,priceToBook,trailingEps,"
@@ -150,6 +167,7 @@ def _fetch_quote_v7(ticker: str, session: requests.Session) -> dict:
         "dividendYield,beta,volume,averageVolume,sharesOutstanding,floatShares,"
         "shortRatio,bookValue,pegRatio,currency,sector,industry"
     )
+    last_err = "no attempt"
     for base in [YAHOO_Q1, YAHOO_Q2]:
         try:
             r = session.get(
@@ -161,10 +179,13 @@ def _fetch_quote_v7(ticker: str, session: requests.Session) -> dict:
                 body = r.json()
                 result = (body.get("quoteResponse") or {}).get("result") or []
                 if result:
-                    return result[0]
-        except Exception:
-            continue
-    return {}
+                    return result[0], None
+                last_err = f"HTTP 200 but empty result"
+            else:
+                last_err = f"HTTP {r.status_code}"
+        except Exception as e:
+            last_err = str(e)
+    return {}, last_err
 
 
 def _fetch_quote_summary(ticker: str, session: requests.Session, crumb: str) -> tuple[dict, str | None]:
@@ -272,22 +293,22 @@ def extract_raw_metrics(ticker: str):
     metrics: dict = {}
     errors: list = []
 
-    # Sequential fetches — requests.Session is NOT thread-safe;
-    # concurrent access corrupts the cookie jar and returns empty data.
-    v7         = _fetch_quote_v7(ticker, session)
+    # Sequential fetches — requests.Session is NOT thread-safe
+    v7, v7_err = _fetch_quote_v7(ticker, session)
     qs, qs_err = _fetch_quote_summary(ticker, session, crumb)
     price_hist = _fetch_chart(ticker, session)
 
+    if v7_err:
+        errors.append(f"v7/quote: {v7_err}")
     if qs_err:
         errors.append(f"quoteSummary: {qs_err}")
 
     # Require at least a price from either source to proceed
     price = _safe(v7.get("regularMarketPrice"))
     if price is None:
-        # Try quoteSummary price section as fallback
         price = _safe(_raw(qs.get("price", {}), "regularMarketPrice"))
     if price is None and not qs:
-        detail = f"v7_empty={not v7}, qs_empty={not qs}, qs_err={qs_err}"
+        detail = f"v7_err={v7_err}, qs_err={qs_err}"
         return None, None, [f"No price data for '{ticker}'. {detail}"]
 
     # Shorthand sections from quoteSummary
