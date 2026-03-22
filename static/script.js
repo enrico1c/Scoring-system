@@ -112,7 +112,11 @@ function doAnalyze() {
         hide("loading-overlay");
 
         if (status === 0) {
-            showError("Cannot reach the analysis server. Make sure the app is running on port 5000 and visit http://localhost:5000 (not the file directly).");
+            if (API_BASE) {
+                showError("Cannot reach the analysis server at " + API_BASE + ". The backend may not be deployed yet — deploy it to Render.com using the render.yaml in the repository.");
+            } else {
+                showError("Cannot reach the analysis server. Make sure Flask is running on port 5000 and visit http://localhost:5000 directly.");
+            }
             return;
         }
         if (status !== 200) {
