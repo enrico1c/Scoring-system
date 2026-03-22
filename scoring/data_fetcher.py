@@ -40,42 +40,53 @@ _crumb_ts: float = 0.0
 _CRUMB_TTL = 1800  # re-obtain crumb after 30 min
 
 
-def _build_session() -> requests.Session:
+def _build_session_and_crumb() -> tuple[requests.Session, str]:
+    """Build a fresh session with cookies + crumb. Never holds _sess_lock."""
     s = requests.Session()
     s.headers.update(_BASE_HEADERS)
-    # Hit the main Finance page to get the required A3/CSRF cookies
+    # Seed cookies — try each URL, move on if one hangs
     for seed_url in [
         "https://finance.yahoo.com",
-        "https://www.yahoo.com",
         "https://fc.yahoo.com",
+        "https://www.yahoo.com",
     ]:
         try:
-            s.get(seed_url, timeout=12, allow_redirects=True)
+            s.get(seed_url, timeout=(5, 8), allow_redirects=True)
             break
         except Exception:
             continue
-    return s
+    # Obtain crumb
+    crumb = ""
+    for base in [YAHOO_Q2, YAHOO_Q1]:
+        try:
+            r = s.get(f"{base}/v1/test/getcrumb", timeout=(5, 8))
+            if r.status_code == 200 and r.text.strip() not in ("", "null"):
+                crumb = r.text.strip()
+                break
+        except Exception:
+            continue
+    return s, crumb
 
 
 def _get_session_and_crumb() -> tuple[requests.Session, str]:
+    """Return (session, crumb), rebuilding only if expired. Lock is held briefly."""
     global _session, _crumb, _crumb_ts
     with _sess_lock:
         now = time.time()
-        if _session is None or (now - _crumb_ts) > _CRUMB_TTL or not _crumb:
-            s = _build_session()
-            # Try both query endpoints for the crumb
-            crumb = ""
-            for base in [YAHOO_Q2, YAHOO_Q1]:
-                try:
-                    r = s.get(f"{base}/v1/test/getcrumb", timeout=10)
-                    if r.status_code == 200 and r.text.strip() not in ("", "null"):
-                        crumb = r.text.strip()
-                        break
-                except Exception:
-                    continue
+        if _session is not None and _crumb and (now - _crumb_ts) < _CRUMB_TTL:
+            return _session, _crumb
+        # Snapshot current values in case we need to fall back
+        existing = (_session, _crumb)
+
+    # Build outside the lock so we don't block other threads
+    s, crumb = _build_session_and_crumb()
+
+    with _sess_lock:
+        # Only store if newer than what another thread may have set meanwhile
+        if (time.time() - _crumb_ts) >= _CRUMB_TTL or not _crumb:
             _session = s
             _crumb = crumb
-            _crumb_ts = now
+            _crumb_ts = time.time()
         return _session, _crumb
 
 
@@ -89,7 +100,12 @@ def _reset_session():
 
 def prewarm():
     """Pre-initialise the session in a background thread at startup."""
-    threading.Thread(target=_get_session_and_crumb, daemon=True).start()
+    def _do():
+        try:
+            _get_session_and_crumb()
+        except Exception:
+            pass
+    threading.Thread(target=_do, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
