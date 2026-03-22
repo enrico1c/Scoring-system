@@ -4,14 +4,34 @@ Fetches all required market and fundamental data from Yahoo Finance via yfinance
 No API key required; yfinance handles authentication internally.
 """
 
-import numpy as np
+import time
 import threading
+import numpy as np
 import yfinance as yf
+
+# Simple in-process cache: ticker -> (timestamp, metrics, quality, errors)
+_cache = {}
+_cache_lock = threading.Lock()
+_CACHE_TTL = 300  # seconds — reuse data for 5 minutes
 
 
 def prewarm():
-    """No-op kept for API compatibility — yfinance has no warm-up needed."""
+    """No-op kept for API compatibility."""
     pass
+
+
+def _cached_fetch(ticker: str):
+    """Return cached result if still fresh, otherwise None."""
+    with _cache_lock:
+        entry = _cache.get(ticker)
+        if entry and (time.time() - entry[0]) < _CACHE_TTL:
+            return entry[1], entry[2], entry[3]
+    return None
+
+
+def _store_cache(ticker: str, metrics, quality, errors):
+    with _cache_lock:
+        _cache[ticker] = (time.time(), metrics, quality, errors)
 
 
 def _safe(val, default=None):
@@ -55,17 +75,34 @@ def extract_raw_metrics(ticker: str):
     """
     Returns (metrics_dict, quality_dict, error_list).
     """
+    # Return cached result if still fresh
+    cached = _cached_fetch(ticker)
+    if cached:
+        return cached
+
     metrics = {}
     errors  = []
 
-    try:
-        t = yf.Ticker(ticker)
-        info = t.info or {}
-    except Exception as e:
-        return None, None, [f"yfinance fetch failed: {e}"]
+    # Retry up to 3 times on rate-limit errors
+    info = {}
+    t = None
+    for attempt in range(3):
+        try:
+            t = yf.Ticker(ticker)
+            info = t.info or {}
+            if info.get("regularMarketPrice") or info.get("currentPrice"):
+                break  # got valid data
+            if attempt < 2:
+                time.sleep(4)
+        except Exception as e:
+            msg = str(e)
+            if "Too Many Requests" in msg or "Rate limited" in msg:
+                if attempt < 2:
+                    time.sleep(5 * (attempt + 1))
+                    continue
+            return None, None, [f"yfinance fetch failed: {msg}"]
 
-    # Require at least a valid price to proceed
-    if not info or not info.get("regularMarketPrice") and not info.get("currentPrice"):
+    if not info or (not info.get("regularMarketPrice") and not info.get("currentPrice")):
         return None, None, [f"No data returned for '{ticker}'. Check the symbol."]
 
     # ── Identity ─────────────────────────────────────────────────────────────
@@ -245,4 +282,5 @@ def extract_raw_metrics(ticker: str):
         "field_count":       sum(1 for v in metrics.values() if v is not None),
     }
 
+    _store_cache(ticker, metrics, quality, errors)
     return metrics, quality, errors
