@@ -7,6 +7,7 @@ Uses cookie + crumb authentication to access v10 quoteSummary endpoints.
 import requests
 import numpy as np
 import threading
+import concurrent.futures
 
 YAHOO_BASE  = "https://query1.finance.yahoo.com"
 YAHOO_BASE2 = "https://query2.finance.yahoo.com"
@@ -59,6 +60,11 @@ def _get_session_and_crumb():
 
         _shared_session = s
         return s, _crumb
+
+
+def prewarm():
+    """Call once at server startup so the first real request doesn't pay init cost."""
+    threading.Thread(target=_get_session_and_crumb, daemon=True).start()
 
 SUMMARY_MODULES = [
     "summaryDetail",
@@ -168,13 +174,15 @@ def extract_raw_metrics(ticker: str):
     metrics = {}
     errors  = []
 
-    # ── Fundamental data ────────────────────────────────────────────────────
-    fund, err = fetch_quote_summary(ticker)
+    # ── Fetch fundamental data + price history in parallel ───────────────────
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        f_fund  = pool.submit(fetch_quote_summary, ticker)
+        f_price = pool.submit(fetch_price_history, ticker)
+        fund, err   = f_fund.result()
+        price_hist, perr = f_price.result()
+
     if err:
         return None, None, [f"Quote summary failed: {err}"]
-
-    # ── Price history ────────────────────────────────────────────────────────
-    price_hist, perr = fetch_price_history(ticker)
     if perr:
         errors.append(f"Price history: {perr}")
         price_hist = []

@@ -102,6 +102,10 @@ function doAnalyze() {
         el("analyze-btn").disabled = false;
         hide("loading-overlay");
 
+        if (status === 0) {
+            showError("Cannot reach the analysis server. Make sure the app is running on port 5000 and visit http://localhost:5000 (not the file directly).");
+            return;
+        }
         if (status !== 200) {
             var errMsg = "Server error (HTTP " + status + ").";
             try {
