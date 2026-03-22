@@ -95,21 +95,24 @@ def extract_raw_metrics(ticker: str):
     info: dict = {}
     t = None
 
-    # Retry up to 3× on rate-limit errors with exponential backoff
-    for attempt in range(3):
+    # Retry up to 4× on rate-limit errors with longer backoff
+    for attempt in range(4):
         try:
             t = yf.Ticker(ticker)
             info = t.info or {}
             if info.get("regularMarketPrice") or info.get("currentPrice"):
                 break
-            if attempt < 2:
-                time.sleep(5)
+            if attempt < 3:
+                time.sleep(8)
         except Exception as e:
             msg = str(e)
             if any(k in msg for k in ("Too Many Requests", "Rate limited", "429")):
-                if attempt < 2:
-                    time.sleep(10 * (2 ** attempt))
+                if attempt < 3:
+                    wait = 15 * (2 ** attempt)   # 15s, 30s, 60s
+                    time.sleep(wait)
                     continue
+                # All retries exhausted — return friendly message
+                return None, None, ["Yahoo Finance is temporarily rate limiting this server. Please wait 1–2 minutes and try again."]
             return None, None, [f"yfinance error: {msg}"]
 
     if not info or (not info.get("regularMarketPrice") and not info.get("currentPrice")):
