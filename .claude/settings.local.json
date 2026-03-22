@@ -6,7 +6,28 @@
       "Bash(pkill -f \"python app.py\")",
       "Bash(git add:*)",
       "Bash(python -c \":*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(curl -s --max-time 90 \"https://scoring-system-19m9.onrender.com/api/analyze/MSFT\")",
+      "Bash(curl -v --max-time 90 \"https://scoring-system-19m9.onrender.com/api/analyze/AAPL\")",
+      "Bash(curl -s --max-time 60 \"https://scoring-system-19m9.onrender.com/api/analyze/MSFT\")",
+      "Bash(curl -s --max-time 90 \"https://scoring-system-19m9.onrender.com/api/analyze/AAPL\")",
+      "Bash(python -c \"from scoring.data_fetcher import extract_raw_metrics; m,q,e = extract_raw_metrics\\(''TSLA''\\); print\\(''OK'' if m else ''FAIL'', ''price:'', m.get\\(''current_price''\\) if m else e\\)\")",
+      "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\\\\nTIME:%{time_total}\" --max-time 90 \"https://scoring-system-19m9.onrender.com/api/analyze/MSFT\")",
+      "Bash(curl -s --max-time 15 \"https://scoring-system-19m9.onrender.com/api/health\")",
+      "Bash(curl -v --max-time 60 \"https://scoring-system-19m9.onrender.com/api/health\")",
+      "Bash(curl -s --max-time 30 \"https://scoring-system-19m9.onrender.com/api/health\")",
+      "Bash(python -c \"import app; print\\(''app imports OK''\\)\")",
+      "Bash(curl -s --max-time 20 \"https://scoring-system-19m9.onrender.com/api/health\")",
+      "Bash(curl -s --max-time 30 \"https://scoring-system-19m9.onrender.com/\" -w \"\\\\nHTTP:%{http_code}\")",
+      "Bash(curl -v --max-time 45 \"https://scoring-system-19m9.onrender.com/api/health\")",
+      "Bash(echo \"exit:$?\")",
+      "Bash(echo \"STATUS:$?\")",
+      "Bash(curl -s -w \"\\\\nHTTP:%{http_code}\\\\nTIME:%.3f\" --max-time 60 \"https://scoring-system-19m9.onrender.com/api/analyze/MSFT\")",
+      "Bash(curl -s -w \"\\\\nHTTP:%{http_code}\" --max-time 90 \"https://scoring-system-19m9.onrender.com/api/analyze/AAPL\")",
+      "Bash(curl -s -w \"\\\\nHTTP:%{http_code}\\\\nTIME:%{time_total}s\" --max-time 60 \"https://scoring-system-19m9.onrender.com/api/analyze/MSFT\")",
+      "Bash(curl -s --max-time 30 \"https://scoring-system-19m9.onrender.com/api/analyze/AAPL\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\(''''details'''',''''''''\\),indent=2\\)\\)\")",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }
