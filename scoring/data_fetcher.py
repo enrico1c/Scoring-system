@@ -29,9 +29,7 @@ _crumb = None
 def _get_session_and_crumb():
     """
     Returns (requests.Session, crumb_str).
-    Initialises once per process by:
-      1. GET https://fc.yahoo.com  (sets A3 cookie)
-      2. GET /v1/test/getcrumb     (returns crumb string)
+    Tries multiple cookie sources to work in both local and cloud environments.
     """
     global _shared_session, _crumb
     with _session_lock:
@@ -41,23 +39,35 @@ def _get_session_and_crumb():
         s = requests.Session()
         s.headers.update({
             "User-Agent": _UA,
-            "Accept":     "*/*",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
         })
-        try:
-            s.get("https://fc.yahoo.com", timeout=10)
-        except Exception:
-            pass  # cookie may already be set; continue
 
-        cr_r = s.get(
-            f"{YAHOO_BASE2}/v1/test/getcrumb",
-            timeout=10,
-        )
-        if cr_r.status_code == 200 and cr_r.text.strip():
-            _crumb = cr_r.text.strip()
-        else:
-            _crumb = ""   # fallback: proceed without crumb
+        # Try cookie sources in order — finance.yahoo.com works better on cloud IPs
+        for cookie_url in [
+            "https://finance.yahoo.com",
+            "https://fc.yahoo.com",
+            "https://www.yahoo.com",
+        ]:
+            try:
+                s.get(cookie_url, timeout=10)
+                break
+            except Exception:
+                continue
 
+        # Try both query endpoints for the crumb
+        crumb = ""
+        for base in [YAHOO_BASE2, YAHOO_BASE]:
+            try:
+                cr_r = s.get(f"{base}/v1/test/getcrumb", timeout=10)
+                if cr_r.status_code == 200 and cr_r.text.strip() and cr_r.text.strip() != "null":
+                    crumb = cr_r.text.strip()
+                    break
+            except Exception:
+                continue
+
+        _crumb = crumb
         _shared_session = s
         return s, _crumb
 
@@ -82,28 +92,45 @@ SUMMARY_MODULES = [
 # Low-level fetchers
 # ---------------------------------------------------------------------------
 
+def _reset_session():
+    """Force re-initialisation of the shared session and crumb."""
+    global _shared_session, _crumb
+    with _session_lock:
+        _shared_session = None
+        _crumb = None
+
+
 def fetch_quote_summary(ticker: str):
     """Return (data_dict, error_str) from Yahoo Finance quoteSummary."""
-    session, crumb = _get_session_and_crumb()
-    url    = f"{YAHOO_BASE}/v10/finance/quoteSummary/{ticker}"
-    params = {"modules": ",".join(SUMMARY_MODULES)}
-    if crumb:
-        params["crumb"] = crumb
-    try:
-        r = session.get(url, params=params, timeout=15)
-        r.raise_for_status()
-        body = r.json()
-        qs = body.get("quoteSummary", {})
-        if qs.get("error"):
-            return None, f"Yahoo error: {qs['error']}"
-        result = qs.get("result") or []
-        if not result:
-            return None, "No result returned by Yahoo Finance"
-        return result[0], None
-    except requests.HTTPError as e:
-        return None, f"HTTP {e.response.status_code} for {ticker}"
-    except Exception as e:
-        return None, str(e)
+    for attempt in range(2):
+        session, crumb = _get_session_and_crumb()
+        url    = f"{YAHOO_BASE}/v10/finance/quoteSummary/{ticker}"
+        params = {"modules": ",".join(SUMMARY_MODULES)}
+        if crumb:
+            params["crumb"] = crumb
+        try:
+            r = session.get(url, params=params, timeout=15)
+            if r.status_code == 401 and attempt == 0:
+                # Stale crumb — reset and retry with a fresh session
+                _reset_session()
+                continue
+            r.raise_for_status()
+            body = r.json()
+            qs = body.get("quoteSummary", {})
+            if qs.get("error"):
+                return None, f"Yahoo error: {qs['error']}"
+            result = qs.get("result") or []
+            if not result:
+                return None, "No result returned by Yahoo Finance"
+            return result[0], None
+        except requests.HTTPError as e:
+            if e.response.status_code == 401 and attempt == 0:
+                _reset_session()
+                continue
+            return None, f"HTTP {e.response.status_code} for {ticker}"
+        except Exception as e:
+            return None, str(e)
+    return None, f"HTTP 401 for {ticker} after session refresh"
 
 
 def fetch_price_history(ticker: str, period: str = "1y"):
