@@ -3,6 +3,15 @@
    Classic 2010-style JavaScript (no frameworks)
    ========================================================= */
 
+/* ── API base URL — auto-detects local vs GitHub Pages ───── */
+var API_BASE = (function () {
+    var h = window.location.hostname;
+    if (h === "localhost" || h === "127.0.0.1" || h === "") {
+        return "";   // relative URL works for local Flask server
+    }
+    return "https://uar-backend.onrender.com";  // deployed Render backend
+}());
+
 /* ── Utility helpers ─────────────────────────────────────── */
 
 function el(id) { return document.getElementById(id); }
@@ -98,7 +107,7 @@ function doAnalyze() {
 
     if (currentXHR) { currentXHR.abort(); }
 
-    currentXHR = makeXHR("/api/analyze/" + encodeURIComponent(ticker), function(status, text) {
+    currentXHR = makeXHR(API_BASE + "/api/analyze/" + encodeURIComponent(ticker), function(status, text) {
         el("analyze-btn").disabled = false;
         hide("loading-overlay");
 
@@ -377,7 +386,7 @@ function runValidation() {
     show("validation-panel");
     el("validation-output").innerHTML = '<span class="val-section">Running validation suite for ' + esc(ticker) + '…</span>\n';
 
-    makeXHR("/api/validate?ticker=" + encodeURIComponent(ticker), function(status, text) {
+    makeXHR(API_BASE + "/api/validate?ticker=" + encodeURIComponent(ticker), function(status, text) {
         if (status !== 200) {
             el("validation-output").innerHTML += '<span class="val-fail">Server returned HTTP ' + status + '</span>';
             return;

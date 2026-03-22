@@ -5,6 +5,7 @@ Flask backend — serves the frontend and exposes the analysis API.
 
 import re
 import time
+import os
 
 from flask import Flask, jsonify, request, send_file, abort
 from flask_cors import CORS
@@ -14,7 +15,7 @@ from scoring.scorer       import compute_full_score
 from scoring.analyzer     import generate_full_analysis
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
-CORS(app)
+CORS(app, origins=["https://enrico1c.github.io", "http://localhost:5000", "http://127.0.0.1:5000"])
 
 # Warm up Yahoo Finance session in the background so the first request is fast
 prewarm()
@@ -112,4 +113,5 @@ def health():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=False, host="0.0.0.0", port=port)
