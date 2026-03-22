@@ -7,10 +7,22 @@
 var API_BASE = (function () {
     var h = window.location.hostname;
     if (h === "localhost" || h === "127.0.0.1" || h === "") {
-        return "";   // relative URL works for local Flask server
+        return "";
     }
-    return "https://uar-backend.onrender.com";  // deployed Render backend
+    // Check if user has saved a custom backend URL
+    var saved = localStorage.getItem("uar_backend_url");
+    if (saved && saved.trim()) {
+        return saved.trim().replace(/\/$/, "");
+    }
+    return "";  // no backend configured yet
 }());
+
+function saveBackendUrl(url) {
+    if (!url || !url.trim()) return;
+    var clean = url.trim().replace(/\/$/, "");
+    localStorage.setItem("uar_backend_url", clean);
+    API_BASE = clean;
+}
 
 /* ── Utility helpers ─────────────────────────────────────── */
 
@@ -96,9 +108,18 @@ function doAnalyze() {
         return;
     }
 
+    // If not on localhost and no backend configured, show setup panel immediately
+    var h = window.location.hostname;
+    var isLocal = (h === "localhost" || h === "127.0.0.1" || h === "");
+    if (!isLocal && !API_BASE) {
+        showSetupPanel("No backend URL configured. Deploy the Flask backend and enter its URL below.");
+        return;
+    }
+
     // Reset UI
     hide("results-area");
     hide("error-box");
+    hide("setup-panel");
     hide("validation-panel");
     el("error-box").innerHTML = "";
     show("loading-overlay");
@@ -112,10 +133,10 @@ function doAnalyze() {
         hide("loading-overlay");
 
         if (status === 0) {
-            if (API_BASE) {
-                showError("Cannot reach the analysis server at " + API_BASE + ". The backend may not be deployed yet — deploy it to Render.com using the render.yaml in the repository.");
+            if (!API_BASE) {
+                showSetupPanel("No backend URL configured. Deploy the Flask backend and enter its URL below.");
             } else {
-                showError("Cannot reach the analysis server. Make sure Flask is running on port 5000 and visit http://localhost:5000 directly.");
+                showSetupPanel("Cannot reach backend at <b>" + esc(API_BASE) + "</b>. Check it is deployed and running.");
             }
             return;
         }
@@ -150,6 +171,25 @@ function showError(msg) {
     var box = el("error-box");
     box.innerHTML = "<strong>Error:</strong> " + esc(msg);
     show("error-box");
+}
+
+function showSetupPanel(msg) {
+    var box = el("error-box");
+    box.innerHTML = "<strong>Backend not configured:</strong> " + msg;
+    show("error-box");
+    show("setup-panel");
+}
+
+function applyBackendUrl() {
+    var inp = el("backend-url-input");
+    if (!inp) return;
+    var url = inp.value.trim().replace(/\/$/, "");
+    if (!url) { alert("Please enter a URL."); return; }
+    saveBackendUrl(url);
+    hide("setup-panel");
+    el("error-box").innerHTML = "";
+    hide("error-box");
+    doAnalyze();
 }
 
 
