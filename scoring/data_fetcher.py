@@ -272,23 +272,23 @@ def extract_raw_metrics(ticker: str):
     metrics: dict = {}
     errors: list = []
 
-    # Fetch in parallel: v7/quote + quoteSummary + chart
-    import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        f_v7    = pool.submit(_fetch_quote_v7, ticker, session)
-        f_qs    = pool.submit(_fetch_quote_summary, ticker, session, crumb)
-        f_chart = pool.submit(_fetch_chart, ticker, session)
-        v7          = f_v7.result()
-        qs, qs_err  = f_qs.result()
-        price_hist  = f_chart.result()
+    # Sequential fetches — requests.Session is NOT thread-safe;
+    # concurrent access corrupts the cookie jar and returns empty data.
+    v7         = _fetch_quote_v7(ticker, session)
+    qs, qs_err = _fetch_quote_summary(ticker, session, crumb)
+    price_hist = _fetch_chart(ticker, session)
 
     if qs_err:
         errors.append(f"quoteSummary: {qs_err}")
 
-    # Require at least a price from v7 to proceed
+    # Require at least a price from either source to proceed
     price = _safe(v7.get("regularMarketPrice"))
+    if price is None:
+        # Try quoteSummary price section as fallback
+        price = _safe(_raw(qs.get("price", {}), "regularMarketPrice"))
     if price is None and not qs:
-        return None, None, [f"No data returned for '{ticker}'. Check the symbol."]
+        detail = f"v7_empty={not v7}, qs_empty={not qs}, qs_err={qs_err}"
+        return None, None, [f"No price data for '{ticker}'. {detail}"]
 
     # Shorthand sections from quoteSummary
     sd  = qs.get("summaryDetail",              {}) or {}
