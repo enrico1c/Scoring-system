@@ -14,7 +14,7 @@ var API_BASE = (function () {
     if (saved && saved.trim()) {
         return saved.trim().replace(/\/$/, "");
     }
-    return "";  // no backend configured yet
+    return "https://scoring-system-19m9.onrender.com";  // deployed backend
 }());
 
 function saveBackendUrl(url) {
