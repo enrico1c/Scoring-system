@@ -4,13 +4,8 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <title>Universal Asset Rating System &mdash; Institutional Quantitative Research</title>
+    <title>Universal Asset Rating System</title>
     <link rel="stylesheet" type="text/css" href="/static/style.css" />
-    <!--[if lt IE 9]>
-    <style type="text/css">
-        #main-layout, #company-card, #score-panel-body { display: block !important; }
-    </style>
-    <![endif]-->
 </head>
 <body>
 
@@ -20,7 +15,6 @@
     <div id="header">
         <div id="header-inner">
             <div id="header-logo">
-                <!-- SVG shield icon (inline, no external dependency) -->
                 <svg width="48" height="54" viewBox="0 0 48 54" xmlns="http://www.w3.org/2000/svg">
                     <path d="M24 2 L44 10 L44 28 C44 40 34 50 24 52 C14 50 4 40 4 28 L4 10 Z"
                           fill="#ffcc00" stroke="#cc9900" stroke-width="1.5"/>
@@ -34,312 +28,109 @@
                 <h1>Universal Asset Rating System</h1>
                 <p>Institutional Quantitative Research Platform &nbsp;&bull;&nbsp; Multi-Asset Scoring Engine v1.0</p>
             </div>
-            <div id="header-right">
-                <span class="version-badge">PRO</span><br />
-                <span>Framework Version 1.0</span><br />
-                <span>&#169; 2010 QuantRatings Inc.</span>
-            </div>
         </div>
     </div><!-- /header -->
 
-    <!-- ═══════════════════════════════════════════════════ NAVBAR -->
-    <div id="navbar">
-        <ul>
-            <li><a href="#" class="active" onclick="return false;">&#8962; Home</a></li>
-            <li><a href="#search-panel" onclick="el('ticker-input').focus();return false;">&#128269; Analyze</a></li>
-            <li><a href="#dimensions-panel" onclick="return false;">&#9783; Dimensions</a></li>
-            <li><a href="#" onclick="runValidation();return false;">&#10003; System Check</a></li>
-            <li class="nav-right"><a href="#" onclick="return false;">Help &amp; Docs</a></li>
-            <li class="nav-right"><a href="#" onclick="return false;">About</a></li>
-        </ul>
-    </div><!-- /navbar -->
+    <!-- ═══════════════════════════════════════════════════ CONTENT -->
+    <div id="content">
 
-    <!-- ═══════════════════════════════════════════════════ TICKER TAPE -->
-    <div id="ticker-tape">
-        <div id="ticker-tape-inner">
-            <span class="tape-item"><span class="sym">AAPL</span><span class="up">182.43 +1.24%</span></span>
-            <span class="tape-item"><span class="sym">MSFT</span><span class="up">374.51 +0.87%</span></span>
-            <span class="tape-item"><span class="sym">GOOGL</span><span class="dn">141.18 -0.42%</span></span>
-            <span class="tape-item"><span class="sym">AMZN</span><span class="up">178.22 +1.55%</span></span>
-            <span class="tape-item"><span class="sym">NVDA</span><span class="up">875.40 +2.10%</span></span>
-            <span class="tape-item"><span class="sym">TSLA</span><span class="dn">192.60 -1.88%</span></span>
-            <span class="tape-item"><span class="sym">JPM</span><span class="up">196.75 +0.33%</span></span>
-            <span class="tape-item"><span class="sym">GS</span><span class="dn">441.20 -0.55%</span></span>
-            <span class="tape-item"><span class="sym">SPY</span><span class="up">509.34 +0.61%</span></span>
-            <span class="tape-item"><span class="sym">QQQ</span><span class="up">438.17 +0.74%</span></span>
-            <span class="tape-item"><span class="sym">GLD</span><span class="up">183.40 +0.28%</span></span>
-            <span class="tape-item"><span class="sym">BTC-USD</span><span class="up">67,450 +3.10%</span></span>
-            <span class="tape-item"><span class="sym">DXY</span><span class="dn">104.22 -0.11%</span></span>
-            <span class="tape-item"><span class="sym">TNX</span><span class="up">4.38 +0.04%</span></span>
-            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-            <span class="tape-item"><span class="sym">AAPL</span><span class="up">182.43 +1.24%</span></span>
-            <span class="tape-item"><span class="sym">MSFT</span><span class="up">374.51 +0.87%</span></span>
-            <span class="tape-item"><span class="sym">GOOGL</span><span class="dn">141.18 -0.42%</span></span>
-            <span class="tape-item"><span class="sym">AMZN</span><span class="up">178.22 +1.55%</span></span>
-            <span class="tape-item"><span class="sym">NVDA</span><span class="up">875.40 +2.10%</span></span>
-            <span class="tape-item"><span class="sym">TSLA</span><span class="dn">192.60 -1.88%</span></span>
+        <!-- ── Search Panel ─────────────────────────────── -->
+        <div id="search-panel">
+            <div id="search-form">
+                <div id="search-form-inner">
+                    <div class="search-label-cell">Ticker Symbol:</div>
+                    <div class="search-input-cell">
+                        <input type="text"
+                               id="ticker-input"
+                               name="ticker"
+                               value=""
+                               placeholder="e.g.  AAPL  MSFT  TSLA  BTC-USD"
+                               maxlength="12"
+                               autocomplete="off"
+                               style="width:100%;" />
+                    </div>
+                    <div class="search-btn-cell">
+                        <button id="analyze-btn" type="button" onclick="doAnalyze()">
+                            &#9654; &nbsp;Analyze
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div><!-- /search-panel -->
+
+        <!-- ── Loading Overlay ──────────────────────────── -->
+        <div id="loading-overlay">
+            <div class="loading-spinner"></div>
+            <p id="loading-text">Loading market data&hellip;</p>
         </div>
-    </div><!-- /ticker-tape -->
 
-    <!-- ═══════════════════════════════════════════════════ MAIN LAYOUT -->
-    <div id="main-layout">
+        <!-- ── Error Box ─────────────────────────────────── -->
+        <div id="error-box"></div>
 
-        <!-- ─────────────────────────────────────── SIDEBAR -->
-        <div id="sidebar">
+        <!-- ════════════════════════════════════════════════ RESULTS -->
+        <div id="results-area">
 
-            <div class="sidebar-box">
-                <div class="sidebar-box-title">&#9632; Quick Tips</div>
-                <div class="sidebar-box-body">
-                    <p>Enter any ticker symbol supported by Yahoo Finance:</p>
-                    <ul>
-                        <li>US Stocks: <b>AAPL</b>, <b>MSFT</b></li>
-                        <li>Indices: <b>^GSPC</b>, <b>^DJI</b></li>
-                        <li>ETFs: <b>SPY</b>, <b>QQQ</b></li>
-                        <li>Crypto: <b>BTC-USD</b></li>
-                        <li>FX: <b>EURUSD=X</b></li>
-                    </ul>
-                </div>
-            </div>
-
-            <div class="sidebar-box">
-                <div class="sidebar-box-title">&#9632; Rating Scale</div>
-                <div class="sidebar-box-body">
-                    <table style="width:100%;font-size:11px;border-collapse:collapse;">
-                        <tr><td style="padding:2px 0;"><span style="color:#00cc44;font-weight:bold;">90-100</span></td><td>Exceptional</td></tr>
-                        <tr><td><span style="color:#44aa22;font-weight:bold;">80-89</span></td><td>Very Attractive</td></tr>
-                        <tr><td><span style="color:#88aa00;font-weight:bold;">70-79</span></td><td>Attractive</td></tr>
-                        <tr><td><span style="color:#aa8800;font-weight:bold;">60-69</span></td><td>Neutral</td></tr>
-                        <tr><td><span style="color:#cc6600;font-weight:bold;">50-59</span></td><td>Weak</td></tr>
-                        <tr><td><span style="color:#cc0000;font-weight:bold;">&lt;50</span></td><td>Unattractive</td></tr>
-                    </table>
-                </div>
-            </div>
-
-            <div class="sidebar-box">
-                <div class="sidebar-box-title">&#9632; Dimensions</div>
-                <a class="sidebar-link" href="#" onclick="toggleDetailCard('valuation');return false;">1. Valuation / Carry</a>
-                <a class="sidebar-link" href="#" onclick="toggleDetailCard('growth');return false;">2. Growth / Adoption</a>
-                <a class="sidebar-link" href="#" onclick="toggleDetailCard('profitability');return false;">3. Profitability / Quality</a>
-                <a class="sidebar-link" href="#" onclick="toggleDetailCard('market_performance');return false;">4. Market Performance</a>
-                <a class="sidebar-link" href="#" onclick="toggleDetailCard('risk');return false;">5. Risk Profile</a>
-                <a class="sidebar-link" href="#" onclick="toggleDetailCard('liquidity');return false;">6. Liquidity</a>
-                <a class="sidebar-link" href="#" onclick="toggleDetailCard('structural');return false;">7. Structural Strength</a>
-                <a class="sidebar-link" href="#" onclick="toggleDetailCard('credit');return false;">8. Credit Quality</a>
-                <a class="sidebar-link" href="#" onclick="toggleDetailCard('macro_alignment');return false;">9. Macro Alignment</a>
-                <a class="sidebar-link" href="#" onclick="toggleDetailCard('factor_attractiveness');return false;">10. Factor Attractiveness</a>
-            </div>
-
-            <div class="sidebar-box">
-                <div class="sidebar-box-title">&#9632; Data Sources</div>
-                <div class="sidebar-box-body">
-                    <p>All data sourced from:</p>
-                    <ul>
-                        <li>Yahoo Finance (real-time &amp; fundamentals)</li>
-                        <li>Historical price series (1Y daily)</li>
-                    </ul>
-                    <p style="margin-top:6px;color:#888;">No API key required.</p>
-                </div>
-            </div>
-
-            <div class="sidebar-box">
-                <div class="sidebar-box-title">&#9632; System Tools</div>
-                <div class="sidebar-box-body" style="padding:6px;">
-                    <a class="sidebar-link" href="#" onclick="runValidation();return false;">&#10003; Run System Validation</a>
-                    <a class="sidebar-link" href="/api/health" target="_blank">&#9679; API Health Check</a>
-                </div>
-            </div>
-
-        </div><!-- /sidebar -->
-
-        <!-- ──────────────────────────────────────── CONTENT -->
-        <div id="content">
-
-            <!-- ── Search Panel ─────────────────────────────── -->
-            <div id="search-panel">
-                <h2>&#128269; Institutional Asset Analysis Engine</h2>
-                <p>
-                    Enter a ticker symbol to generate a comprehensive quantitative rating across
-                    10 analytical dimensions using the Universal Multi-Asset Scoring Framework.
-                    Data is sourced in real-time from Yahoo Finance &mdash; no API key required.
-                </p>
-                <div id="search-form">
-                    <div id="search-form-inner">
-                        <div class="search-label-cell">Ticker Symbol:</div>
-                        <div class="search-input-cell">
-                            <input type="text"
-                                   id="ticker-input"
-                                   name="ticker"
-                                   value=""
-                                   placeholder="e.g.  AAPL  MSFT  TSLA  BTC-USD"
-                                   maxlength="12"
-                                   autocomplete="off"
-                                   style="width:100%;" />
-                        </div>
-                        <div class="search-btn-cell">
-                            <button id="analyze-btn"
-                                    type="button"
-                                    onclick="doAnalyze()">
-                                &#9654; &nbsp;Analyze
-                            </button>
-                            <button class="validate-btn"
-                                    type="button"
-                                    onclick="runValidation()">
-                                &#10003; Check System
-                            </button>
-                        </div>
+            <!-- ── Company Header Card ───────────────────── -->
+            <div id="company-card">
+                <div id="company-info">
+                    <h2>
+                        <span id="co-ticker" class="ticker-badge">TICK</span>
+                        <span id="co-name">Company Name</span>
+                    </h2>
+                    <div style="margin-top:6px;">
+                        <span id="co-sector" class="sector-tag">Sector</span>
+                        <span id="co-industry" class="sector-tag">Industry</span>
                     </div>
                 </div>
-            </div><!-- /search-panel -->
-
-            <!-- ── Loading Overlay ──────────────────────────── -->
-            <div id="loading-overlay">
-                <div class="loading-spinner"></div>
-                <p id="loading-text">Loading market data&hellip;</p>
-            </div>
-
-            <!-- ── Error Box ─────────────────────────────────── -->
-            <div id="error-box"></div>
-
-            <!-- ── Validation Panel ──────────────────────────── -->
-            <div id="validation-panel">
-                <div id="validation-panel-header">
-                    &#10003; System Validation Report
-                    &nbsp;<span style="font-size:11px;font-weight:normal;opacity:0.8;">(Tests: data collection, scoring engine, analysis generator)</span>
+                <div id="company-price-block">
+                    <div id="co-price" class="price">—</div>
+                    <div id="co-change" class="change-pos">—</div>
+                    <div id="co-mcap" class="mcap"></div>
                 </div>
-                <div id="validation-panel-body">
-                    <pre id="validation-output" style="margin:0;white-space:pre-wrap;word-wrap:break-word;"></pre>
+            </div><!-- /company-card -->
+
+            <!-- ── Score Panel ────────────────────────────── -->
+            <div id="score-panel">
+                <div id="score-panel-header">
+                    &#9733; Universal Composite Score &mdash; Final Rating
                 </div>
-            </div>
-
-            <!-- ════════════════════════════════════════════════ RESULTS -->
-            <div id="results-area">
-
-                <!-- ── Company Header Card ───────────────────── -->
-                <div id="company-card">
-                    <div id="company-info">
-                        <h2>
-                            <span id="co-ticker" class="ticker-badge">TICK</span>
-                            <span id="co-name">Company Name</span>
-                        </h2>
-                        <div style="margin-top:6px;">
-                            <span id="co-sector" class="sector-tag">Sector</span>
-                            <span id="co-industry" class="sector-tag">Industry</span>
-                        </div>
-                        <div style="margin-top:8px;font-size:11px;color:#556677;">
-                            Data quality:
-                            <span id="dq-pct" style="font-weight:bold;">—</span>
-                            <span class="data-quality-bar">
-                                <span id="dq-fill" class="data-quality-fill" style="width:0%"></span>
-                            </span>
-                            &nbsp;&nbsp;
-                            <span id="co-proctime" style="color:#8899aa;"></span>
-                        </div>
+                <div id="score-panel-body">
+                    <div id="score-gauge-cell">
+                        <div id="big-score" class="big-score-number">—</div>
+                        <div class="big-score-label">/ 100 &nbsp; Universal Score</div>
+                        <div id="rating-badge" class="rating-badge rating-neutral">Neutral</div>
+                        <div id="stars-display" class="stars"></div>
                     </div>
-                    <div id="company-price-block">
-                        <div id="co-price" class="price">—</div>
-                        <div id="co-change" class="change-pos">—</div>
-                        <div id="co-mcap" class="mcap"></div>
+                    <div id="score-detail-cell">
+                        <p class="sub-heading">Executive Summary</p>
+                        <div id="summary-text" class="summary-text">—</div>
                     </div>
-                </div><!-- /company-card -->
-
-                <!-- ── Score Panel ────────────────────────────── -->
-                <div id="score-panel">
-                    <div id="score-panel-header">
-                        &#9733; Universal Composite Score &mdash; Final Rating
-                    </div>
-                    <div id="score-panel-body">
-                        <div id="score-gauge-cell">
-                            <div id="big-score" class="big-score-number">—</div>
-                            <div class="big-score-label">/ 100 &nbsp; Universal Score</div>
-                            <div id="rating-badge" class="rating-badge rating-neutral">Neutral</div>
-                            <div id="stars-display" class="stars"></div>
-                        </div>
-                        <div id="score-detail-cell">
-                            <p class="sub-heading">Executive Summary</p>
-                            <div id="summary-text" class="summary-text">—</div>
-                            <table class="score-meta-table">
-                                <tr>
-                                    <td>Scoring Framework:</td>
-                                    <td>Universal Multi-Asset (UScore v1.0)</td>
-                                </tr>
-                                <tr>
-                                    <td>Formula:</td>
-                                    <td style="font-family:'Courier New',monospace;font-size:11px;">
-                                        FinalScore = &alpha;&middot;&Sigma;<sub>d</sub> W<sub>d</sub>&middot;S<sub>d</sub>&middot;Q<sub>d</sub>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td>Dimensions scored:</td>
-                                    <td>10 (see breakdown below)</td>
-                                </tr>
-                                <tr>
-                                    <td>Data source:</td>
-                                    <td>Yahoo Finance (real-time)</td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-                </div><!-- /score-panel -->
-
-                <!-- ── Dimension Bars ─────────────────────────── -->
-                <div id="dimensions-panel">
-                    <div id="dimensions-panel-header">
-                        &#9783; Dimension Score Overview &mdash; Click any row to expand full analysis
-                    </div>
-                    <div id="dimensions-panel-body">
-                        <div class="info-box">
-                            <b>How to read:</b> Each of the 10 analytical dimensions is scored 0&ndash;100.
-                            Scores are weighted and quality-adjusted to produce the composite.
-                            Click a dimension bar or expand below for the full breakdown and institutional commentary.
-                        </div>
-                        <div id="dim-bars-container"></div>
-                        <div style="margin-top:12px;font-size:11px;">
-                            <a href="#" onclick="expandAll();return false;" style="margin-right:12px;">&#9660; Expand All</a>
-                            <a href="#" onclick="collapseAll();return false;">&#9650; Collapse All</a>
-                        </div>
-                    </div>
-                </div><!-- /dimensions-panel -->
-
-                <!-- ── Dimension Detail Cards ─────────────────── -->
-                <div id="detail-panels">
-                    <div class="section-heading">&#9660; Dimension Analysis &mdash; Full Breakdown</div>
-                    <div id="detail-cards-container"></div>
-                </div><!-- /detail-panels -->
-
-                <!-- ── Disclaimer ─────────────────────────────── -->
-                <div class="info-box" style="font-size:11px;color:#666;">
-                    <b>Disclaimer:</b> This system provides quantitative analysis for informational and educational purposes only.
-                    Scores are derived from publicly available data and proprietary algorithmic models.
-                    This is not investment advice. Past performance does not guarantee future results.
-                    All data sourced from Yahoo Finance and may be delayed or subject to error.
                 </div>
+            </div><!-- /score-panel -->
 
-            </div><!-- /results-area -->
+            <!-- ── Dimension Bars ─────────────────────────── -->
+            <div id="dimensions-panel">
+                <div id="dimensions-panel-header">
+                    &#9783; Dimension Score Overview &mdash; Click any row to expand full analysis
+                </div>
+                <div id="dimensions-panel-body">
+                    <div id="dim-bars-container"></div>
+                    <div style="margin-top:12px;font-size:11px;">
+                        <a href="#" onclick="expandAll();return false;" style="margin-right:12px;">&#9660; Expand All</a>
+                        <a href="#" onclick="collapseAll();return false;">&#9650; Collapse All</a>
+                    </div>
+                </div>
+            </div><!-- /dimensions-panel -->
 
-        </div><!-- /content -->
+            <!-- ── Dimension Detail Cards ─────────────────── -->
+            <div id="detail-panels">
+                <div class="section-heading">&#9660; Dimension Analysis &mdash; Full Breakdown</div>
+                <div id="detail-cards-container"></div>
+            </div><!-- /detail-panels -->
 
-    </div><!-- /main-layout -->
+        </div><!-- /results-area -->
 
-    <!-- ═══════════════════════════════════════════════════ FOOTER -->
-    <div id="footer">
-        <p>
-            <strong>Universal Asset Rating System</strong> &mdash;
-            Institutional Quantitative Research Platform &bull;
-            Framework v1.0 &bull;
-            10-Dimension Scoring Architecture
-        </p>
-        <p>
-            Data provided by <a href="https://finance.yahoo.com" target="_blank">Yahoo Finance</a> &bull;
-            &copy; 2010 QuantRatings Inc. All rights reserved. &bull;
-            <a href="#" onclick="runValidation();return false;">System Validation</a> &bull;
-            <a href="/api/health" target="_blank">API Status</a>
-        </p>
-        <p style="color:#667788;margin-top:4px;font-size:10px;">
-            Scores based on Universal Multi-Asset Formula:
-            FinalScore&#x2091; = &alpha;&#x2099;&nbsp;&middot;&nbsp;[&Sigma;&#x2091;
-            W&#x2091;(S&#x2091;&middot;Q&#x2091;)] + (1&minus;&alpha;&#x2099;)&nbsp;&middot;&nbsp;RA&#x2091;
-        </p>
-    </div><!-- /footer -->
+    </div><!-- /content -->
 
 </div><!-- /page-wrapper -->
 
