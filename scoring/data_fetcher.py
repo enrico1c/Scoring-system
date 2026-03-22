@@ -14,6 +14,11 @@ _cache = {}
 _cache_lock = threading.Lock()
 _CACHE_TTL = 300  # seconds — reuse data for 5 minutes
 
+# Global throttle: only one Yahoo Finance call at a time, min 2s between calls
+_yf_lock = threading.Lock()
+_last_yf_call = 0.0
+_MIN_INTERVAL = 2.0  # seconds between calls
+
 
 def prewarm():
     """No-op kept for API compatibility."""
@@ -83,22 +88,28 @@ def extract_raw_metrics(ticker: str):
     metrics = {}
     errors  = []
 
-    # Retry up to 3 times on rate-limit errors
+    # Throttle + retry: only one Yahoo Finance call at a time, with backoff
+    global _last_yf_call
     info = {}
     t = None
     for attempt in range(3):
+        with _yf_lock:
+            wait = _MIN_INTERVAL - (time.time() - _last_yf_call)
+            if wait > 0:
+                time.sleep(wait)
+            _last_yf_call = time.time()
         try:
             t = yf.Ticker(ticker)
             info = t.info or {}
             if info.get("regularMarketPrice") or info.get("currentPrice"):
                 break  # got valid data
             if attempt < 2:
-                time.sleep(4)
+                time.sleep(5)
         except Exception as e:
             msg = str(e)
-            if "Too Many Requests" in msg or "Rate limited" in msg:
+            if "Too Many Requests" in msg or "Rate limited" in msg or "429" in msg:
                 if attempt < 2:
-                    time.sleep(5 * (attempt + 1))
+                    time.sleep(10 * (attempt + 1))
                     continue
             return None, None, [f"yfinance fetch failed: {msg}"]
 
