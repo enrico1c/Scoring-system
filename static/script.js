@@ -6,8 +6,8 @@
 /* ── Utility helpers ─────────────────────────────────────── */
 
 function el(id) { return document.getElementById(id); }
-function show(id) { el(id).style.display = "block"; }
-function hide(id) { el(id).style.display = "none"; }
+function show(id) { var e = el(id); if (e) e.style.display = "block"; }
+function hide(id) { var e = el(id); if (e) e.style.display = "none"; }
 
 function esc(str) {
     if (str === null || str === undefined) return "—";
@@ -163,22 +163,14 @@ function renderCompanyCard(d) {
         ? d.currency + " " + fmtNum(d.current_price, 2)
         : "—";
 
-    el("co-name").innerHTML    = esc(d.name);
-    el("co-ticker").innerHTML  = esc(d.ticker);
-    el("co-sector").innerHTML  = esc(d.sector);
-    el("co-industry").innerHTML= esc(d.industry);
-    el("co-price").innerHTML   = esc(price);
-    el("co-change").className  = chgCls;
-    el("co-change").innerHTML  = esc(chgStr);
-    el("co-mcap").innerHTML    = d.market_cap_fmt ? "Mkt Cap: " + esc(d.market_cap_fmt) : "";
-    el("co-proctime").innerHTML= "Analysis completed in " + d.processing_time_s + "s";
-
-    // Data quality bar
-    var qpct = (d.data_quality && d.data_quality.completeness)
-        ? Math.round(d.data_quality.completeness * 100) : 0;
-    el("dq-pct").innerHTML = qpct + "%";
-    el("dq-fill").style.backgroundPositionX = ((100 - qpct) * 2.4) + "px";
-    el("dq-fill").style.width = qpct + "%";
+    el("co-name").innerHTML     = esc(d.name);
+    el("co-ticker").innerHTML   = esc(d.ticker);
+    el("co-sector").innerHTML   = esc(d.sector);
+    el("co-industry").innerHTML = esc(d.industry);
+    el("co-price").innerHTML    = esc(price);
+    el("co-change").className   = chgCls;
+    el("co-change").innerHTML   = esc(chgStr);
+    el("co-mcap").innerHTML     = d.market_cap_fmt ? "Mkt Cap: " + esc(d.market_cap_fmt) : "";
 }
 
 
