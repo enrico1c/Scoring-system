@@ -147,7 +147,7 @@ def extract_raw_metrics(ticker: str):
 
     cp = _safe(profile.get("price"))
     metrics["current_price"] = cp
-    metrics["market_cap"]    = _safe(profile.get("mktCap"))
+    metrics["market_cap"]    = _safe(profile.get("marketCap") or profile.get("mktCap"))
     metrics["beta"]          = _safe(profile.get("beta"))
     metrics["avg_volume"]    = _safe(profile.get("volAvg"))
     metrics["volume"]        = _safe(profile.get("volAvg"))
