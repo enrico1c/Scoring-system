@@ -27,21 +27,9 @@ _CACHE_TTL = 300  # seconds
 FMP_BASE  = "https://financialmodelingprep.com/stable"   # new stable API (2024+)
 FMP_V3    = "https://financialmodelingprep.com/api/v3"    # legacy fallback
 
-# ---------------------------------------------------------------------------
-# Key pool — supports multiple keys for rotation
-# Set FMP_API_KEY as a comma-separated list, e.g.:
-#   FMP_API_KEY=keyA,keyB,keyC,keyD
-# Each request round-robins across available keys.
-# On 403/429, automatically falls back to the next key.
-# ---------------------------------------------------------------------------
-_key_index = 0
-_key_lock_r = threading.Lock()
 
-
-def _fmp_keys() -> list:
-    """Return all configured API keys (supports comma-separated multi-key)."""
-    raw = os.environ.get("FMP_API_KEY", "").strip()
-    return [k.strip() for k in raw.split(",") if k.strip()]
+def _fmp_key() -> str:
+    return os.environ.get("FMP_API_KEY", "").strip()
 
 
 def prewarm():
@@ -64,58 +52,33 @@ def _safe(val, default=None):
 
 
 def _get(path: str, params: dict = None):
-    """GET a FMP endpoint and return parsed JSON.
-
-    Round-robins across the key pool and retries the next key on 401/403/429.
-    """
-    global _key_index
-    keys = _fmp_keys()
-    if not keys:
-        raise RuntimeError(
-            "FMP_API_KEY not configured. "
-            "Get a free key at https://site.financialmodelingprep.com/register "
-            "and add it (comma-separated for multiple) to your Render env vars."
-        )
-
-    # Advance global rotation index (thread-safe); remember where we started
-    with _key_lock_r:
-        start = _key_index
-        _key_index = (_key_index + 1) % len(keys)
-
-    last_err: Exception = RuntimeError("Unknown error")
-    for i in range(len(keys)):
-        key = keys[(start + i) % len(keys)]
-        qs = {"apikey": key}
-        if params:
-            qs.update(params)
-        url = f"{FMP_BASE}{path}?{urlencode(qs)}"
-        req = Request(url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; StockScorer/1.0)",
-            "Accept": "application/json",
-        })
+    """GET a FMP endpoint and return parsed JSON. Raises on error."""
+    key = _fmp_key()
+    qs = {"apikey": key}
+    if params:
+        qs.update(params)
+    url = f"{FMP_BASE}{path}?{urlencode(qs)}"
+    req = Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (compatible; StockScorer/1.0)",
+        "Accept": "application/json",
+    })
+    try:
+        with urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except HTTPError as e:
         try:
-            with urlopen(req, timeout=20) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            # FMP returns {"Error Message": "..."} on auth failure
-            if isinstance(data, dict) and data.get("Error Message"):
-                last_err = RuntimeError(f"FMP error (key {i+1}/{len(keys)}): {data['Error Message']}")
-                continue  # try next key
-            return data
-        except HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")[:300]
-            except Exception:
-                body = ""
-            last_err = RuntimeError(
-                f"FMP HTTP {e.code} (key {i+1}/{len(keys)}): {body or e.reason}"
-            )
-            if e.code in (401, 403, 429):
-                continue  # quota/auth issue — try next key
-            raise last_err  # 404/500 etc — no point retrying other keys
-        except URLError as e:
-            raise RuntimeError(f"Network error reaching FMP: {e.reason}")
+            body = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:
+            body = ""
+        raise RuntimeError(f"FMP HTTP {e.code}: {body or e.reason}")
+    except URLError as e:
+        raise RuntimeError(f"Network error reaching FMP: {e.reason}")
 
-    raise last_err  # all keys exhausted
+    # FMP returns {"Error Message": "..."} on auth failure
+    if isinstance(data, dict) and data.get("Error Message"):
+        raise RuntimeError(f"FMP API error: {data['Error Message']}")
+
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -133,13 +96,12 @@ def extract_raw_metrics(ticker: str):
         if entry and (time.time() - entry[0]) < _CACHE_TTL:
             return entry[1], entry[2], entry[3]
 
-    if not _fmp_keys():
+    key = _fmp_key()
+    if not key:
         return None, None, [
             "FMP_API_KEY is not configured on this server. "
             "Get a free key at https://site.financialmodelingprep.com/register "
-            "and add it as FMP_API_KEY in your Render service Environment settings. "
-            "You can add multiple keys comma-separated (e.g. key1,key2,key3) to "
-            "multiply your daily request quota."
+            "and add it as FMP_API_KEY in your Render service Environment settings."
         ]
 
     metrics: dict = {}
