@@ -1,163 +1,92 @@
 """
 Phase 1 — Data Collection Layer
-Fetches all required market and fundamental data from Yahoo Finance (no API key required).
-Uses cookie + crumb authentication to access v10 quoteSummary endpoints.
+Fetches market and fundamental data from Yahoo Finance via yfinance.
+Uses curl_cffi to impersonate Chrome at the TLS layer, bypassing Yahoo's
+bot-detection that blocks plain server-side requests from datacenter IPs.
 """
 
-import requests
-import numpy as np
+import time
 import threading
-import concurrent.futures
-
-YAHOO_BASE  = "https://query1.finance.yahoo.com"
-YAHOO_BASE2 = "https://query2.finance.yahoo.com"
-
-_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/120.0.0.0 Safari/537.36"
-)
+import numpy as np
 
 # ---------------------------------------------------------------------------
-# Session + crumb management (lazy initialisation, cached per process)
+# In-process result cache (5 min TTL per ticker)
 # ---------------------------------------------------------------------------
-_session_lock = threading.Lock()
-_shared_session = None
-_crumb = None
+_cache: dict = {}
+_cache_lock = threading.Lock()
+_CACHE_TTL = 300  # seconds
 
+# Throttle: minimum gap between Yahoo Finance calls
+_yf_lock = threading.Lock()
+_last_call: float = 0.0
+_MIN_GAP = 2.0
 
-def _get_session_and_crumb():
-    """
-    Returns (requests.Session, crumb_str).
-    Initialises once per process by:
-      1. GET https://fc.yahoo.com  (sets A3 cookie)
-      2. GET /v1/test/getcrumb     (returns crumb string)
-    """
-    global _shared_session, _crumb
-    with _session_lock:
-        if _shared_session is not None and _crumb:
-            return _shared_session, _crumb
-
-        s = requests.Session()
-        s.headers.update({
-            "User-Agent": _UA,
-            "Accept":     "*/*",
-            "Accept-Language": "en-US,en;q=0.9",
-        })
-        try:
-            s.get("https://fc.yahoo.com", timeout=10)
-        except Exception:
-            pass  # cookie may already be set; continue
-
-        cr_r = s.get(
-            f"{YAHOO_BASE2}/v1/test/getcrumb",
-            timeout=10,
-        )
-        if cr_r.status_code == 200 and cr_r.text.strip():
-            _crumb = cr_r.text.strip()
-        else:
-            _crumb = ""   # fallback: proceed without crumb
-
-        _shared_session = s
-        return s, _crumb
+# curl_cffi session (Chrome TLS impersonation) — created once per process
+_cf_session = None
+_cf_lock = threading.Lock()
 
 
 def prewarm():
-    """Call once at server startup so the first real request doesn't pay init cost."""
-    threading.Thread(target=_get_session_and_crumb, daemon=True).start()
-
-SUMMARY_MODULES = [
-    "summaryDetail",
-    "defaultKeyStatistics",
-    "financialData",
-    "incomeStatementHistory",
-    "balanceSheetHistory",
-    "cashflowStatementHistory",
-    "price",
-    "assetProfile",
-]
+    """Initialise the curl_cffi session in the background at startup."""
+    threading.Thread(target=_get_cf_session, daemon=True).start()
 
 
-# ---------------------------------------------------------------------------
-# Low-level fetchers
-# ---------------------------------------------------------------------------
-
-def fetch_quote_summary(ticker: str):
-    """Return (data_dict, error_str) from Yahoo Finance quoteSummary."""
-    session, crumb = _get_session_and_crumb()
-    url    = f"{YAHOO_BASE}/v10/finance/quoteSummary/{ticker}"
-    params = {"modules": ",".join(SUMMARY_MODULES)}
-    if crumb:
-        params["crumb"] = crumb
-    try:
-        r = session.get(url, params=params, timeout=15)
-        r.raise_for_status()
-        body = r.json()
-        qs = body.get("quoteSummary", {})
-        if qs.get("error"):
-            return None, f"Yahoo error: {qs['error']}"
-        result = qs.get("result") or []
-        if not result:
-            return None, "No result returned by Yahoo Finance"
-        return result[0], None
-    except requests.HTTPError as e:
-        return None, f"HTTP {e.response.status_code} for {ticker}"
-    except Exception as e:
-        return None, str(e)
+def _get_cf_session():
+    """Return a curl_cffi Session impersonating Chrome, or None if unavailable."""
+    global _cf_session
+    with _cf_lock:
+        if _cf_session is not None:
+            return _cf_session if _cf_session is not False else None
+        try:
+            from curl_cffi import requests as cffi
+            _cf_session = cffi.Session(impersonate="chrome110")
+        except Exception:
+            _cf_session = False  # mark unavailable so we don't retry
+        return _cf_session if _cf_session is not False else None
 
 
-def fetch_price_history(ticker: str, period: str = "1y"):
-    """Return (list_of_(timestamp,close), error_str)."""
-    session, crumb = _get_session_and_crumb()
-    url    = f"{YAHOO_BASE}/v8/finance/chart/{ticker}"
-    params = {"interval": "1d", "range": period, "includeAdjustedClose": "true"}
-    if crumb:
-        params["crumb"] = crumb
-    try:
-        r = session.get(url, params=params, timeout=15)
-        r.raise_for_status()
-        body = r.json()
-        chart = body.get("chart", {})
-        if chart.get("error"):
-            return None, str(chart["error"])
-        results = chart.get("result") or []
-        if not results:
-            return None, "Empty chart result"
-        res = results[0]
-        timestamps = res.get("timestamp", [])
-        adj_close_list = res.get("indicators", {}).get("adjclose", [])
-        closes = adj_close_list[0].get("adjclose", []) if adj_close_list else []
-        pairs = [(t, c) for t, c in zip(timestamps, closes) if c is not None]
-        if not pairs:
-            return None, "No valid close prices"
-        return pairs, None
-    except Exception as e:
-        return None, str(e)
+def _throttle():
+    global _last_call
+    with _yf_lock:
+        gap = _MIN_GAP - (time.time() - _last_call)
+        if gap > 0:
+            time.sleep(gap)
+        _last_call = time.time()
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _raw(obj, *keys, default=None):
-    """Safely navigate nested dicts; unwrap Yahoo's {'raw': X, 'fmt': Y} wrappers."""
-    cur = obj
-    for k in keys:
-        if not isinstance(cur, dict):
-            return default
-        cur = cur.get(k, default)
-        if cur is None:
-            return default
-    if isinstance(cur, dict) and "raw" in cur:
-        return cur["raw"]
-    return cur
+def _safe(val, default=None):
+    if val is None:
+        return default
+    try:
+        f = float(val)
+        return default if f != f else f
+    except (TypeError, ValueError):
+        return default
 
 
 def _pct(val):
-    """Yahoo sometimes stores 0.15 for 15% and sometimes 15. Normalise to decimal."""
-    if val is None:
+    v = _safe(val)
+    if v is None:
         return None
-    return val if abs(val) <= 1.5 else val / 100.0
+    return v if abs(v) <= 1.5 else v / 100.0
+
+
+def _row(df, *names):
+    """Safely get the first row matching any name from a yfinance DataFrame."""
+    if df is None or df.empty:
+        return None
+    for name in names:
+        if name in df.index:
+            try:
+                vals = [v for v in df.loc[name] if v is not None and str(v) != "nan"]
+                return vals if vals else None
+            except Exception:
+                continue
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -169,127 +98,173 @@ def extract_raw_metrics(ticker: str):
     Returns (metrics_dict, quality_dict, error_list).
     metrics_dict  — all numerical/string values needed for scoring
     quality_dict  — data-quality metadata
-    error_list    — non-fatal warnings
+    error_list    — non-fatal warnings / fatal errors
     """
-    metrics = {}
-    errors  = []
+    # ── Cache hit ────────────────────────────────────────────────────────────
+    with _cache_lock:
+        entry = _cache.get(ticker)
+        if entry and (time.time() - entry[0]) < _CACHE_TTL:
+            return entry[1], entry[2], entry[3]
 
-    # ── Fetch fundamental data + price history in parallel ───────────────────
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-        f_fund  = pool.submit(fetch_quote_summary, ticker)
-        f_price = pool.submit(fetch_price_history, ticker)
-        fund, err   = f_fund.result()
-        price_hist, perr = f_price.result()
+    _throttle()
 
-    if err:
-        return None, None, [f"Quote summary failed: {err}"]
-    if perr:
-        errors.append(f"Price history: {perr}")
-        price_hist = []
+    import yfinance as yf
 
-    # Shorthand sections
-    sd  = fund.get("summaryDetail",              {}) or {}
-    ks  = fund.get("defaultKeyStatistics",       {}) or {}
-    fd  = fund.get("financialData",              {}) or {}
-    pr  = fund.get("price",                      {}) or {}
-    ap  = fund.get("assetProfile",               {}) or {}
-    inc = (fund.get("incomeStatementHistory",    {}) or {}).get("incomeStatementHistory", [])
-    bs  = (fund.get("balanceSheetHistory",       {}) or {}).get("balanceSheetStatements", [])
-    cf  = (fund.get("cashflowStatementHistory",  {}) or {}).get("cashflowStatements",     [])
+    metrics: dict = {}
+    errors: list = []
+    info: dict = {}
+    t = None
+
+    # Use curl_cffi Chrome session to bypass Yahoo Finance's TLS fingerprinting
+    session = _get_cf_session()
+
+    # Retry up to 3× on rate-limit or empty responses
+    for attempt in range(3):
+        try:
+            t = yf.Ticker(ticker, session=session) if session else yf.Ticker(ticker)
+            info = t.info or {}
+            if info.get("regularMarketPrice") or info.get("currentPrice"):
+                break  # success
+            # Got empty info — wait and retry
+            if attempt < 2:
+                time.sleep(5 * (attempt + 1))
+        except Exception as e:
+            msg = str(e)
+            if any(k in msg for k in ("Too Many Requests", "Rate limited", "429", "rate limit")):
+                if attempt < 2:
+                    wait = 8 * (2 ** attempt)   # 8s, 16s
+                    time.sleep(wait)
+                    continue
+                return None, None, [
+                    "Yahoo Finance is temporarily rate-limiting this server. "
+                    "Please wait 1–2 minutes and try again."
+                ]
+            return None, None, [f"yfinance error: {msg}"]
+
+    if not info or (not info.get("regularMarketPrice") and not info.get("currentPrice")):
+        return None, None, [f"No data returned for '{ticker}'. Check the symbol."]
 
     # ── Identity ─────────────────────────────────────────────────────────────
     metrics["ticker"]   = ticker.upper()
-    metrics["name"]     = _raw(pr, "longName") or _raw(pr, "shortName") or ticker.upper()
-    metrics["sector"]   = _raw(ap, "sector")   or "Unknown"
-    metrics["industry"] = _raw(ap, "industry") or "Unknown"
-    metrics["currency"] = _raw(pr, "currency") or "USD"
+    metrics["name"]     = info.get("longName") or info.get("shortName") or ticker.upper()
+    metrics["sector"]   = info.get("sector")   or "Unknown"
+    metrics["industry"] = info.get("industry") or "Unknown"
+    metrics["currency"] = info.get("currency") or "USD"
 
     # ── Price & market ───────────────────────────────────────────────────────
-    metrics["current_price"] = _raw(pr, "regularMarketPrice")
-    metrics["market_cap"]    = _raw(pr, "marketCap")
-    metrics["change_pct"]    = _raw(pr, "regularMarketChangePercent")
+    metrics["current_price"] = _safe(info.get("regularMarketPrice") or info.get("currentPrice"))
+    metrics["market_cap"]    = _safe(info.get("marketCap"))
+    cp_chg = info.get("regularMarketChangePercent")
+    if cp_chg is not None:
+        metrics["change_pct"] = _safe(cp_chg)
 
     # ── Valuation ────────────────────────────────────────────────────────────
-    metrics["pe_ratio"]      = _raw(sd, "trailingPE")
-    metrics["forward_pe"]    = _raw(ks, "forwardPE")
-    metrics["price_to_book"] = _raw(ks, "priceToBook")
-    metrics["ev_to_ebitda"]  = _raw(ks, "enterpriseToEbitda")
-    metrics["ev_to_revenue"] = _raw(ks, "enterpriseToRevenue")
-    metrics["dividend_yield"]= _pct(_raw(sd, "dividendYield"))
-    metrics["peg_ratio"]     = _raw(ks, "pegRatio")
+    metrics["pe_ratio"]      = _safe(info.get("trailingPE"))
+    metrics["forward_pe"]    = _safe(info.get("forwardPE"))
+    metrics["price_to_book"] = _safe(info.get("priceToBook"))
+    metrics["ev_to_ebitda"]  = _safe(info.get("enterpriseToEbitda"))
+    metrics["ev_to_revenue"] = _safe(info.get("enterpriseToRevenue"))
+    metrics["dividend_yield"]= _pct(info.get("dividendYield"))
+    metrics["peg_ratio"]     = _safe(info.get("pegRatio"))
 
-    # ── Growth (from financialData) ──────────────────────────────────────────
-    metrics["revenue_growth"]  = _pct(_raw(fd, "revenueGrowth"))
-    metrics["earnings_growth"] = _pct(_raw(fd, "earningsGrowth"))
-
-    # ── Growth from income-statement history ─────────────────────────────────
-    if len(inc) >= 2:
-        r0 = _raw(inc[0], "totalRevenue");  r1 = _raw(inc[1], "totalRevenue")
-        n0 = _raw(inc[0], "netIncome");     n1 = _raw(inc[1], "netIncome")
-        if r0 and r1 and r1 != 0:
-            metrics["revenue_growth_yoy"]    = (r0 - r1) / abs(r1)
-        if n0 and n1 and n1 != 0:
-            metrics["net_income_growth_yoy"] = (n0 - n1) / abs(n1)
-        metrics["total_revenue"]    = r0
-        metrics["net_income"]       = n0
-        metrics["gross_profit"]     = _raw(inc[0], "grossProfit")
-        metrics["ebit"]             = _raw(inc[0], "ebit")
-        metrics["interest_expense"] = _raw(inc[0], "interestExpense")
+    # ── Growth ───────────────────────────────────────────────────────────────
+    metrics["revenue_growth"]  = _pct(info.get("revenueGrowth"))
+    metrics["earnings_growth"] = _pct(info.get("earningsGrowth"))
 
     # ── Profitability ────────────────────────────────────────────────────────
-    metrics["roe"]             = _pct(_raw(fd, "returnOnEquity"))
-    metrics["roa"]             = _pct(_raw(fd, "returnOnAssets"))
-    metrics["gross_margins"]   = _pct(_raw(fd, "grossMargins"))
-    metrics["operating_margins"]= _pct(_raw(fd, "operatingMargins"))
-    metrics["profit_margins"]  = _pct(_raw(fd, "profitMargins"))
-    metrics["ebitda_margins"]  = _pct(_raw(fd, "ebitdaMargins"))
+    metrics["roe"]              = _pct(info.get("returnOnEquity"))
+    metrics["roa"]              = _pct(info.get("returnOnAssets"))
+    metrics["gross_margins"]    = _pct(info.get("grossMargins"))
+    metrics["operating_margins"]= _pct(info.get("operatingMargins"))
+    metrics["profit_margins"]   = _pct(info.get("profitMargins"))
+    metrics["ebitda_margins"]   = _pct(info.get("ebitdaMargins"))
 
-    # ── Balance sheet ────────────────────────────────────────────────────────
-    if bs:
-        b = bs[0]
-        metrics["total_assets"]            = _raw(b, "totalAssets")
-        metrics["total_liabilities"]       = _raw(b, "totalLiab")
-        metrics["stockholder_equity"]      = _raw(b, "totalStockholderEquity")
-        metrics["cash"]                    = _raw(b, "cash")
-        metrics["total_current_assets"]    = _raw(b, "totalCurrentAssets")
-        metrics["total_current_liabilities"]= _raw(b, "totalCurrentLiabilities")
-        metrics["long_term_debt"]          = _raw(b, "longTermDebt")
-        metrics["short_term_debt"]         = _raw(b, "shortLongTermDebt")
-        eq = metrics.get("stockholder_equity")
-        ltd= metrics.get("long_term_debt") or 0
-        std= metrics.get("short_term_debt") or 0
-        if eq and eq != 0:
-            metrics["debt_to_equity"] = (ltd + std) / abs(eq)
+    # ── Liquidity ────────────────────────────────────────────────────────────
+    metrics["current_ratio"]    = _safe(info.get("currentRatio"))
+    metrics["quick_ratio"]      = _safe(info.get("quickRatio"))
+    de = _safe(info.get("debtToEquity"))
+    if de is not None:
+        metrics["debt_to_equity_fd"] = de / 100.0 if abs(de) > 10 else de
 
-    # ── Cash flow ────────────────────────────────────────────────────────────
-    if cf:
-        c = cf[0]
-        ocf  = _raw(c, "totalCashFromOperatingActivities")
-        capx = _raw(c, "capitalExpenditures")
-        metrics["operating_cash_flow"] = ocf
-        metrics["capex"]               = capx
-        if ocf is not None and capx is not None:
-            metrics["free_cash_flow"] = ocf - abs(capx)
+    # ── Market / risk ────────────────────────────────────────────────────────
+    metrics["beta"]               = _safe(info.get("beta"))
+    metrics["volume"]             = _safe(info.get("volume") or info.get("regularMarketVolume"))
+    metrics["avg_volume"]         = _safe(info.get("averageVolume"))
+    metrics["shares_outstanding"] = _safe(info.get("sharesOutstanding"))
+    metrics["float_shares"]       = _safe(info.get("floatShares"))
+    metrics["short_ratio"]        = _safe(info.get("shortRatio"))
+    metrics["52w_high"]           = _safe(info.get("fiftyTwoWeekHigh"))
+    metrics["52w_low"]            = _safe(info.get("fiftyTwoWeekLow"))
+    metrics["50d_avg"]            = _safe(info.get("fiftyDayAverage"))
+    metrics["200d_avg"]           = _safe(info.get("twoHundredDayAverage"))
+    metrics["52w_change"]         = _pct(info.get("52WeekChange"))
 
-    # ── Liquidity (from financialData) ──────────────────────────────────────
-    metrics["current_ratio"]      = _raw(fd, "currentRatio")
-    metrics["quick_ratio"]        = _raw(fd, "quickRatio")
-    metrics["debt_to_equity_fd"]  = _raw(fd, "debtToEquity")   # can be × 100
+    # ── Income statement ─────────────────────────────────────────────────────
+    try:
+        if t is not None:
+            fin = t.financials
+            if fin is not None and not fin.empty:
+                rev  = _row(fin, "Total Revenue")
+                ni   = _row(fin, "Net Income")
+                gp   = _row(fin, "Gross Profit")
+                ebit = _row(fin, "EBIT", "Operating Income")
+                ie   = _row(fin, "Interest Expense")
+                if rev:
+                    metrics["total_revenue"] = _safe(rev[0])
+                    if len(rev) >= 2 and rev[1]:
+                        metrics["revenue_growth_yoy"] = (rev[0] - rev[1]) / abs(rev[1])
+                if ni:
+                    metrics["net_income"] = _safe(ni[0])
+                    if len(ni) >= 2 and ni[1]:
+                        metrics["net_income_growth_yoy"] = (ni[0] - ni[1]) / abs(ni[1])
+                if gp:   metrics["gross_profit"]     = _safe(gp[0])
+                if ebit: metrics["ebit"]             = _safe(ebit[0])
+                if ie:   metrics["interest_expense"] = _safe(ie[0])
+    except Exception as e:
+        errors.append(f"financials: {e}")
 
-    # ── Market risk metrics ──────────────────────────────────────────────────
-    metrics["beta"]              = _raw(sd, "beta")
-    metrics["volume"]            = _raw(sd, "volume")
-    metrics["avg_volume"]        = _raw(sd, "averageVolume")
-    metrics["shares_outstanding"]= _raw(ks, "sharesOutstanding")
-    metrics["float_shares"]      = _raw(ks, "floatShares")
-    metrics["short_ratio"]       = _raw(ks, "shortRatio")
-    metrics["52w_high"]          = _raw(sd, "fiftyTwoWeekHigh")
-    metrics["52w_low"]           = _raw(sd, "fiftyTwoWeekLow")
-    metrics["50d_avg"]           = _raw(sd, "fiftyDayAverage")
-    metrics["200d_avg"]          = _raw(sd, "twoHundredDayAverage")
-    metrics["52w_change"]        = _pct(_raw(ks, "fiftyTwoWeekChange"))
+    # ── Balance sheet ─────────────────────────────────────────────────────────
+    try:
+        if t is not None:
+            bs = t.balance_sheet
+            if bs is not None and not bs.empty:
+                def bval(*names):
+                    row = _row(bs, *names)
+                    return _safe(row[0]) if row else None
+                metrics["total_assets"]              = bval("Total Assets")
+                metrics["total_liabilities"]         = bval("Total Liabilities Net Minority Interest", "Total Liab")
+                metrics["stockholder_equity"]        = bval("Stockholders Equity", "Total Stockholder Equity")
+                metrics["cash"]                      = bval("Cash And Cash Equivalents", "Cash")
+                metrics["total_current_assets"]      = bval("Current Assets", "Total Current Assets")
+                metrics["total_current_liabilities"] = bval("Current Liabilities", "Total Current Liabilities")
+                metrics["long_term_debt"]            = bval("Long Term Debt")
+                metrics["short_term_debt"]           = bval("Current Debt", "Short Long Term Debt")
+                eq  = metrics.get("stockholder_equity")
+                ltd = metrics.get("long_term_debt") or 0
+                std = metrics.get("short_term_debt") or 0
+                if eq and eq != 0:
+                    metrics["debt_to_equity"] = (ltd + std) / abs(eq)
+    except Exception as e:
+        errors.append(f"balance_sheet: {e}")
 
-    # ── Derived ratios ───────────────────────────────────────────────────────
+    # ── Cash flow ─────────────────────────────────────────────────────────────
+    try:
+        if t is not None:
+            cf = t.cashflow
+            if cf is not None and not cf.empty:
+                def cfval(*names):
+                    row = _row(cf, *names)
+                    return _safe(row[0]) if row else None
+                ocf  = cfval("Operating Cash Flow", "Total Cash From Operating Activities")
+                capx = cfval("Capital Expenditure", "Capital Expenditures")
+                metrics["operating_cash_flow"] = ocf
+                metrics["capex"] = capx
+                if ocf is not None and capx is not None:
+                    metrics["free_cash_flow"] = ocf - abs(capx)
+    except Exception as e:
+        errors.append(f"cashflow: {e}")
+
+    # ── Derived ratios ────────────────────────────────────────────────────────
     ebit = metrics.get("ebit")
     iexp = metrics.get("interest_expense")
     if ebit and iexp:
@@ -310,29 +285,36 @@ def extract_raw_metrics(ticker: str):
         if rng > 0:
             metrics["52w_position"] = (cp - lo52) / rng
 
-    # ── Historical volatility & momentum from price history ─────────────────
-    if len(price_hist) > 20:
-        closes = [p[1] for p in price_hist]
-        rets   = []
-        for i in range(1, len(closes)):
-            if closes[i - 1] and closes[i - 1] > 0:
-                rets.append(np.log(closes[i] / closes[i - 1]))
-        if rets:
-            metrics["historical_volatility"] = float(np.std(rets) * np.sqrt(252))
-        if len(closes) >= 63  and closes[-63]  > 0: metrics["momentum_3m"]  = (closes[-1] - closes[-63])  / closes[-63]
-        if len(closes) >= 126 and closes[-126] > 0: metrics["momentum_6m"]  = (closes[-1] - closes[-126]) / closes[-126]
-        if len(closes) >= 252 and closes[-252] > 0: metrics["momentum_12m"] = (closes[-1] - closes[-252]) / closes[-252]
+    # ── Price history: momentum & volatility ──────────────────────────────────
+    try:
+        if t is not None:
+            hist = t.history(period="1y")
+            if hist is not None and len(hist) > 20:
+                closes = hist["Close"].tolist()
+                rets = [float(np.log(closes[i] / closes[i-1]))
+                        for i in range(1, len(closes))
+                        if closes[i-1] and closes[i-1] > 0]
+                if rets:
+                    metrics["historical_volatility"] = float(np.std(rets) * np.sqrt(252))
+                if len(closes) >= 63  and closes[-63]  > 0: metrics["momentum_3m"]  = (closes[-1] - closes[-63])  / closes[-63]
+                if len(closes) >= 126 and closes[-126] > 0: metrics["momentum_6m"]  = (closes[-1] - closes[-126]) / closes[-126]
+                if len(closes) >= 252 and closes[-252] > 0: metrics["momentum_12m"] = (closes[-1] - closes[-252]) / closes[-252]
+    except Exception as e:
+        errors.append(f"history: {e}")
 
-    # ── Data quality ─────────────────────────────────────────────────────────
-    core = ["current_price","pe_ratio","market_cap","roe","profit_margins",
-            "current_ratio","beta","52w_change"]
+    # ── Data quality ──────────────────────────────────────────────────────────
+    core = ["current_price", "pe_ratio", "market_cap", "roe", "profit_margins",
+            "current_ratio", "beta", "52w_change"]
     present = sum(1 for f in core if metrics.get(f) is not None)
     quality = {
         "completeness":      round(present / len(core), 2),
         "has_price":         metrics.get("current_price") is not None,
-        "has_fundamental":   any(metrics.get(f) is not None for f in ["roe","pe_ratio"]),
+        "has_fundamental":   any(metrics.get(f) is not None for f in ["roe", "pe_ratio"]),
         "has_balance_sheet": metrics.get("total_assets") is not None,
         "field_count":       sum(1 for v in metrics.values() if v is not None),
     }
+
+    with _cache_lock:
+        _cache[ticker] = (time.time(), metrics, quality, errors)
 
     return metrics, quality, errors

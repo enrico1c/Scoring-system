@@ -15,7 +15,7 @@ from scoring.scorer       import compute_full_score
 from scoring.analyzer     import generate_full_analysis
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
-CORS(app, origins=["https://enrico1c.github.io", "http://localhost:5000", "http://127.0.0.1:5000"])
+CORS(app, origins=["https://enrico1c.github.io", "http://localhost:5000", "http://127.0.0.1:5000", "http://localhost:3000"])
 
 # Warm up Yahoo Finance session in the background so the first request is fast
 prewarm()
@@ -45,6 +45,15 @@ def analyze(ticker: str):
     metrics, quality, fetch_errors = extract_raw_metrics(ticker)
 
     if not metrics:
+        # Detect rate-limit specifically so the UI can show a helpful message
+        rate_limited = any("rate limit" in (e or "").lower() or "too many" in (e or "").lower()
+                           for e in (fetch_errors or []))
+        if rate_limited:
+            return jsonify({
+                "error": "Yahoo Finance is temporarily rate-limiting this server. "
+                         "Please wait 1–2 minutes and try again.",
+                "details": fetch_errors,
+            }), 429
         return jsonify({
             "error": f"Could not retrieve data for '{ticker}'. "
                      "Verify the symbol is correct and listed on a Yahoo Finance-supported exchange.",

@@ -1,6 +1,6 @@
 flask>=2.3.0
 flask-cors>=4.0.0
-requests>=2.31.0
+yfinance>=0.2.40
+curl-cffi>=0.6.0
 numpy>=1.24.0
-scipy>=1.11.0
 gunicorn>=21.2.0

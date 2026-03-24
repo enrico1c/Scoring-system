@@ -67,6 +67,26 @@
         <!-- ── Error Box ─────────────────────────────────── -->
         <div id="error-box"></div>
 
+        <!-- ── Backend Setup Panel ───────────────────────── -->
+        <div id="setup-panel">
+            <div id="setup-panel-inner">
+                <div id="setup-heading">&#9881; Backend Setup Required</div>
+                <p>This site needs a Python backend to fetch market data. Deploy it for free in 2 minutes:</p>
+                <ol>
+                    <li>Go to <strong>render.com</strong> and sign in with GitHub</li>
+                    <li>Click <strong>New + &rarr; Web Service</strong></li>
+                    <li>Select the <strong>enrico1c/Scoring-system</strong> repository</li>
+                    <li>Render auto-reads <code>render.yaml</code> &mdash; click <strong>Create Web Service</strong></li>
+                    <li>Wait ~3 min for build, then copy the URL (e.g. <code>https://uar-backend.onrender.com</code>)</li>
+                    <li>Paste it below and click Save &mdash; the setting is remembered in your browser</li>
+                </ol>
+                <div id="setup-form-row">
+                    <input type="text" id="backend-url-input" placeholder="https://your-app.onrender.com" autocomplete="off" />
+                    <button type="button" onclick="applyBackendUrl()">&#10003; Save &amp; Retry</button>
+                </div>
+            </div>
+        </div><!-- /setup-panel -->
+
         <!-- ════════════════════════════════════════════════ RESULTS -->
         <div id="results-area">
 

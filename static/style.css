@@ -781,3 +781,66 @@ a:hover { text-decoration:underline; color:#0055cc; }
     background: linear-gradient(to right, #ff4444, #ffcc00, #44cc44);
     background-size: 240px 10px;
 }
+
+/* ── Backend Setup Panel ─────────────────────────────────── */
+#setup-panel {
+    display: none;
+    margin: 16px 0;
+    background: #fff8e1;
+    border: 2px solid #f0a000;
+    border-radius: 4px;
+}
+#setup-panel-inner {
+    padding: 18px 22px;
+}
+#setup-heading {
+    font-size: 15px;
+    font-weight: bold;
+    color: #7a4f00;
+    margin-bottom: 10px;
+}
+#setup-panel p {
+    margin: 0 0 10px 0;
+    color: #555;
+    font-size: 13px;
+}
+#setup-panel ol {
+    margin: 0 0 14px 0;
+    padding-left: 22px;
+    font-size: 13px;
+    color: #444;
+    line-height: 1.7;
+}
+#setup-panel code {
+    background: #f0f0f0;
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-family: monospace;
+    font-size: 12px;
+}
+#setup-form-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+#backend-url-input {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid #cca000;
+    border-radius: 3px;
+    font-size: 13px;
+    font-family: monospace;
+}
+#setup-form-row button {
+    padding: 6px 16px;
+    background: #f0a000;
+    color: #fff;
+    border: 1px solid #c07800;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: bold;
+}
+#setup-form-row button:hover {
+    background: #c07800;
+}
