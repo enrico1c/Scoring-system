@@ -87,10 +87,14 @@ function makeXHR(url, callback) {
         xhr = new ActiveXObject("Microsoft.XMLHTTP"); // IE6
     }
     xhr.open("GET", url, true);
+    xhr.timeout = 70000; // 70 second max — covers Render cold-start + fetch time
     xhr.onreadystatechange = function () {
         if (xhr.readyState === 4) {
             callback(xhr.status, xhr.responseText);
         }
+    };
+    xhr.ontimeout = function () {
+        callback(-1, "");
     };
     xhr.send();
     return xhr;
@@ -132,6 +136,10 @@ function doAnalyze() {
         el("analyze-btn").disabled = false;
         hide("loading-overlay");
 
+        if (status === -1) {
+            showError("Request timed out. The backend is waking up from sleep (Render free tier takes ~30s). Please wait a moment and try again.");
+            return;
+        }
         if (status === 0) {
             if (!API_BASE) {
                 showSetupPanel("No backend URL configured. Deploy the Flask backend and enter its URL below.");

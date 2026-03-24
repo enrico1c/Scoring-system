@@ -117,24 +117,23 @@ def extract_raw_metrics(ticker: str):
     # Datacenter IPs (e.g. Render) are blocked by Yahoo without this.
     session = _get_cf_session()
 
-    # Retry up to 4× on rate-limit errors with longer backoff
-    for attempt in range(4):
+    # Retry up to 3× — total max wait ~30s to stay well within gunicorn timeout
+    for attempt in range(3):
         try:
             t = yf.Ticker(ticker, session=session) if session else yf.Ticker(ticker)
             info = t.info or {}
             if info.get("regularMarketPrice") or info.get("currentPrice"):
                 break
-            if attempt < 3:
-                time.sleep(8)
+            if attempt < 2:
+                time.sleep(5)   # 5s, 10s between empty-response retries
         except Exception as e:
             msg = str(e)
             if any(k in msg for k in ("Too Many Requests", "Rate limited", "429")):
-                if attempt < 3:
-                    wait = 15 * (2 ** attempt)   # 15s, 30s, 60s
+                if attempt < 2:
+                    wait = 8 * (attempt + 1)   # 8s, 16s
                     time.sleep(wait)
                     continue
-                # All retries exhausted — return friendly message
-                return None, None, ["Yahoo Finance is temporarily rate limiting this server. Please wait 1–2 minutes and try again."]
+                return None, None, ["Yahoo Finance is temporarily rate-limiting this server. Please wait 1–2 minutes and try again."]
             return None, None, [f"yfinance error: {msg}"]
 
     if not info or (not info.get("regularMarketPrice") and not info.get("currentPrice")):
