@@ -15,7 +15,7 @@ from scoring.scorer       import compute_full_score
 from scoring.analyzer     import generate_full_analysis
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
-CORS(app, origins=["https://enrico1c.github.io", "http://localhost:5000", "http://127.0.0.1:5000", "http://localhost:3000"])
+CORS(app)  # Public read-only API — allow all origins
 
 # Warm up Yahoo Finance session in the background so the first request is fast
 prewarm()
