@@ -47,16 +47,19 @@ def analyze(ticker: str):
     if not metrics:
         # Detect rate-limit specifically so the UI can show a helpful message
         rate_limited = any("rate limit" in (e or "").lower() or "too many" in (e or "").lower()
+                           or "429" in (e or "")
                            for e in (fetch_errors or []))
-        if rate_limited:
+        quota_hit = any("403" in (e or "") or "quota" in (e or "").lower()
+                        for e in (fetch_errors or []))
+        if rate_limited or quota_hit:
             return jsonify({
-                "error": "Yahoo Finance is temporarily rate-limiting this server. "
-                         "Please wait 1–2 minutes and try again.",
+                "error": "Daily API quota reached. The free plan allows ~40 stock analyses per day. "
+                         "Quota resets at midnight UTC — please try again later.",
                 "details": fetch_errors,
             }), 429
         return jsonify({
             "error": f"Could not retrieve data for '{ticker}'. "
-                     "Verify the symbol is correct and listed on a Yahoo Finance-supported exchange.",
+                     "Verify the ticker symbol is correct (e.g. AAPL, TSLA, MSFT).",
             "details": fetch_errors,
         }), 404
 
