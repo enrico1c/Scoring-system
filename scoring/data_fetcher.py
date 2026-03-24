@@ -66,7 +66,11 @@ def _get(path: str, params: dict = None):
         with urlopen(req, timeout=20) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except HTTPError as e:
-        raise RuntimeError(f"FMP HTTP {e.code}: {e.reason}")
+        try:
+            body = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:
+            body = ""
+        raise RuntimeError(f"FMP HTTP {e.code}: {body or e.reason}")
     except URLError as e:
         raise RuntimeError(f"Network error reaching FMP: {e.reason}")
 
