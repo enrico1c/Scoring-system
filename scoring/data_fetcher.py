@@ -7,7 +7,6 @@ No API key required.
 
 import time
 import threading
-import numpy as np
 
 # ---------------------------------------------------------------------------
 # In-process result cache (5 min TTL per ticker)
@@ -285,6 +284,7 @@ def extract_raw_metrics(ticker: str):
         if t is not None:
             hist = t.history(period="1y")
             if hist is not None and len(hist) > 20:
+                import numpy as np  # lazy: only loaded when history is computed
                 closes = hist["Close"].tolist()
                 rets = [float(np.log(closes[i] / closes[i-1]))
                         for i in range(1, len(closes))
