@@ -21,10 +21,28 @@ _yf_lock = threading.Lock()
 _last_call: float = 0.0
 _MIN_GAP = 3.0
 
+# curl_cffi Chrome session — bypasses Yahoo's TLS-fingerprint bot detection
+_cf_session = None
+_cf_lock = threading.Lock()
+
+
+def _get_cf_session():
+    """Return a curl_cffi Session impersonating Chrome, or None if unavailable."""
+    global _cf_session
+    with _cf_lock:
+        if _cf_session is not None:
+            return _cf_session if _cf_session is not False else None
+        try:
+            from curl_cffi import requests as cffi
+            _cf_session = cffi.Session(impersonate="chrome110")
+        except Exception:
+            _cf_session = False  # mark unavailable so we don't retry
+        return _cf_session if _cf_session is not False else None
+
 
 def prewarm():
-    """No-op — yfinance initialises lazily."""
-    pass
+    """Initialise the curl_cffi Chrome session at startup in the background."""
+    threading.Thread(target=_get_cf_session, daemon=True).start()
 
 
 def _throttle():
@@ -95,10 +113,14 @@ def extract_raw_metrics(ticker: str):
     info: dict = {}
     t = None
 
+    # Use curl_cffi Chrome session to bypass Yahoo's TLS-fingerprint bot detection.
+    # Datacenter IPs (e.g. Render) are blocked by Yahoo without this.
+    session = _get_cf_session()
+
     # Retry up to 4× on rate-limit errors with longer backoff
     for attempt in range(4):
         try:
-            t = yf.Ticker(ticker)
+            t = yf.Ticker(ticker, session=session) if session else yf.Ticker(ticker)
             info = t.info or {}
             if info.get("regularMarketPrice") or info.get("currentPrice"):
                 break
