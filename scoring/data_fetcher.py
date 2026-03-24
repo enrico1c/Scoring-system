@@ -24,7 +24,8 @@ _cache: dict = {}
 _cache_lock = threading.Lock()
 _CACHE_TTL = 300  # seconds
 
-FMP_BASE = "https://financialmodelingprep.com/api/v3"
+FMP_BASE  = "https://financialmodelingprep.com/stable"   # new stable API (2024+)
+FMP_V3    = "https://financialmodelingprep.com/api/v3"    # legacy fallback
 
 
 def _fmp_key() -> str:
@@ -111,12 +112,12 @@ def extract_raw_metrics(ticker: str):
             errors.append(f"{name}: {e}")
 
     tasks = [
-        ("profile",  f"/profile/{ticker}",                 None),
-        ("ratios",   f"/ratios-ttm/{ticker}",              None),
-        ("income",   f"/income-statement/{ticker}",        {"limit": "2", "period": "annual"}),
-        ("balance",  f"/balance-sheet-statement/{ticker}", {"limit": "1", "period": "annual"}),
-        ("cashflow", f"/cash-flow-statement/{ticker}",     {"limit": "1", "period": "annual"}),
-        ("history",  f"/historical-price-full/{ticker}",   {"timeseries": "365"}),
+        ("profile",  "/profile",                 {"symbol": ticker}),
+        ("ratios",   "/ratios-ttm",              {"symbol": ticker}),
+        ("income",   "/income-statement",        {"symbol": ticker, "limit": "2", "period": "annual"}),
+        ("balance",  "/balance-sheet-statement", {"symbol": ticker, "limit": "1", "period": "annual"}),
+        ("cashflow", "/cash-flow-statement",     {"symbol": ticker, "limit": "1", "period": "annual"}),
+        ("history",  "/historical-price-eod/full", {"symbol": ticker, "serietype": "line", "timeseries": "365"}),
     ]
     threads = [threading.Thread(target=fetch, args=t, daemon=True) for t in tasks]
     for t in threads:
@@ -255,7 +256,13 @@ def extract_raw_metrics(ticker: str):
 
     # ── Price history: momentum & volatility ──────────────────────────────────
     hist_data   = results.get("history", {})
-    hist_prices = hist_data.get("historical", []) if isinstance(hist_data, dict) else []
+    # stable API returns {"symbol":..., "historical":[...]} or a plain list
+    if isinstance(hist_data, dict):
+        hist_prices = hist_data.get("historical", [])
+    elif isinstance(hist_data, list):
+        hist_prices = hist_data
+    else:
+        hist_prices = []
 
     if hist_prices and len(hist_prices) > 20:
         hist_prices = list(reversed(hist_prices))   # oldest first
