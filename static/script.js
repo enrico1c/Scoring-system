@@ -87,7 +87,7 @@ function makeXHR(url, callback) {
         xhr = new ActiveXObject("Microsoft.XMLHTTP"); // IE6
     }
     xhr.open("GET", url, true);
-    xhr.timeout = 70000; // 70 second max — covers Render cold-start + fetch time
+    xhr.timeout = 120000; // 120s — Render cold-start (~50s) + yfinance fetch (~30s)
     xhr.onreadystatechange = function () {
         if (xhr.readyState === 4) {
             callback(xhr.status, xhr.responseText);
@@ -103,9 +103,13 @@ function makeXHR(url, callback) {
 
 /* ── Main analyze flow ──────────────────────────────────── */
 
-var currentXHR = null;
+var currentXHR  = null;
+var _retryTimer = null;
+var MAX_RETRIES = 3;
 
-function doAnalyze() {
+function doAnalyze(attempt) {
+    attempt = attempt || 0;
+
     var ticker = el("ticker-input").value.trim().toUpperCase();
     if (!ticker) {
         alert("Please enter a ticker symbol.");
@@ -120,34 +124,53 @@ function doAnalyze() {
         return;
     }
 
-    // Reset UI
-    hide("results-area");
-    hide("error-box");
-    hide("setup-panel");
-    hide("validation-panel");
-    el("error-box").innerHTML = "";
+    // Reset UI on first attempt only
+    if (attempt === 0) {
+        hide("results-area");
+        hide("error-box");
+        hide("setup-panel");
+        hide("validation-panel");
+        el("error-box").innerHTML = "";
+        // Fire a health ping immediately to wake Render from sleep
+        // while the user waits — this runs in parallel, result ignored
+        if (API_BASE) { makeXHR(API_BASE + "/api/health", function(){}); }
+    }
+
     show("loading-overlay");
     el("analyze-btn").disabled = true;
-    el("loading-text").innerHTML = "Fetching market data for <b>" + esc(ticker) + "</b>…";
+
+    if (attempt === 0) {
+        el("loading-text").innerHTML = "Fetching market data for <b>" + esc(ticker) + "</b>…";
+    } else {
+        el("loading-text").innerHTML =
+            "Backend waking up — retrying for <b>" + esc(ticker) +
+            "</b> (attempt " + (attempt + 1) + " / " + MAX_RETRIES + ")…";
+    }
 
     if (currentXHR) { currentXHR.abort(); }
 
     currentXHR = makeXHR(API_BASE + "/api/analyze/" + encodeURIComponent(ticker), function(status, text) {
-        el("analyze-btn").disabled = false;
-        hide("loading-overlay");
-
-        if (status === -1) {
-            showError("Request timed out. The backend is waking up from sleep (Render free tier takes ~30s). Please wait a moment and try again.");
-            return;
-        }
-        if (status === 0) {
-            if (!API_BASE) {
-                showSetupPanel("No backend URL configured. Deploy the Flask backend and enter its URL below.");
+        // Timeout or unreachable — auto-retry with countdown
+        if (status === -1 || status === 0) {
+            if (attempt < MAX_RETRIES - 1) {
+                _scheduleRetry(ticker, attempt + 1);
             } else {
-                showSetupPanel("Cannot reach backend at <b>" + esc(API_BASE) + "</b>. Check it is deployed and running.");
+                el("analyze-btn").disabled = false;
+                hide("loading-overlay");
+                if (status === 0 && !API_BASE) {
+                    showSetupPanel("No backend URL configured. Deploy the Flask backend and enter its URL below.");
+                } else if (status === 0) {
+                    showSetupPanel("Cannot reach backend at <b>" + esc(API_BASE) + "</b>. Check it is deployed and running.");
+                } else {
+                    showError("Backend did not respond after " + MAX_RETRIES + " attempts. The Render free tier may still be starting. Please try again in 1–2 minutes.");
+                }
             }
             return;
         }
+
+        el("analyze-btn").disabled = false;
+        hide("loading-overlay");
+
         if (status !== 200) {
             var errMsg = "Server error (HTTP " + status + ").";
             try {
@@ -173,6 +196,25 @@ function doAnalyze() {
 
         renderResults(data);
     });
+}
+
+function _scheduleRetry(ticker, attempt) {
+    var secs = 20;
+    show("loading-overlay");
+    el("analyze-btn").disabled = true;
+
+    function tick() {
+        if (secs <= 0) {
+            doAnalyze(attempt);
+            return;
+        }
+        el("loading-text").innerHTML =
+            "Backend waking up — retrying in <b>" + secs + "s</b>" +
+            " (attempt " + (attempt + 1) + " / " + MAX_RETRIES + ")…";
+        secs--;
+        _retryTimer = setTimeout(tick, 1000);
+    }
+    tick();
 }
 
 function showError(msg) {
